@@ -64,10 +64,10 @@ class ADAS_Preprocess:
         imgByteArray = bytearray(self.fid.read(frameSize))
         imgRGB = np.zeros((self.height,self.width,3),np.uint8)  
         for i in range(frameSize):
-            imgRGB[(i%(self.height*self.width))/self.width][i%self.width][i/(self.height*self.width)] = imgByteArray[i]
+            imgRGB[(i/3)/self.width][(i/3)%self.width][i%3] = imgByteArray[i]
      
         #[height,width,channel] from cv2.cvtColor, I420 YVU,YV12:YUV
-        imgYUV = cv2.cvtColor(imgRGB,cv2.COLOR_RGB2YUV)
+        imgYUV = cv2.cvtColor(imgRGB,cv2.COLOR_BGR2YUV)
         return imgYUV            
         
             
@@ -83,7 +83,8 @@ class ADAS_Preprocess:
              skipSize = int(self.width * self.height*2)
          elif self.inputType == "RGB":
              imgYUV = self.RGB2YUV()
-             return imgYUV[0,:,:]                        
+             cv2.imwrite("test1.jpg",imgYUV[:,:,0])
+             return imgYUV[:,:,0]                        
          
          imgByteArray = bytearray(self.fid.read(frameSize))
          self.fid.read(skipSize)
@@ -132,7 +133,7 @@ if __name__ == "__main__":
     inputImage = os.getcwd() + filename
     inputT = "JPG"
     prep_jpg = ADAS_Preprocess(inputImage,inputType=inputT)
-    cv2.imshow("test1",prep_jpg.read2DImageFromSequence())
+    cv2.imwrite("test_jpg.jpg",prep_jpg.read2DImageFromSequence())
     del(prep_jpg)
     
     #iYUV420->Y
