@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 
+"""
+Created on Wed Mar 02 10:58:24 2016
+
+@author: yipinp
+"""
+
 import cv2
 import numpy as np
 import os
