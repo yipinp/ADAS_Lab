@@ -68,7 +68,6 @@ class ADAS_Preprocess:
              imgByteArray = bytearray(self.fid.read(frameSize))
              imgRGB = np.zeros((3,self.height,self.width),np.uint8) 
              for i in range(frameSize):
-                print i, frameSize,i/(self.height*self.width),(i%(self.height*self.width))/self.width,(i%(self.height*self.width))%self.width
                 imgRGB[i/(self.height*self.width)][(i%(self.height*self.width))/self.width][(i%(self.height*self.width))%self.width] = imgByteArray[i]
              return imgRGB                 
                        
