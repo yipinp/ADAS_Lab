@@ -109,11 +109,5 @@ if __name__ == "__main__":
     prep_jpg = ADAS_Preprocess(inputImage,inputType=inputT)
     #cv2.imshow("test",prep_jpg.read2DImageFromSequence())
     del(prep_jpg)
-    #RGB
-    filename = r"\rgb_out.png"
-    inputImage = os.getcwd() + filename
-    inputType = "RGB"
-    prep_rgb = ADAS_Preprocess(inputImage,width,height,inputType,"Bypass")
-    cv2.imshow("test",prep_rgb.read2DImageFromSequence())
-    del(prep_rgb)    
+  
     
