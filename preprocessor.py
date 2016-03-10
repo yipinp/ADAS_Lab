@@ -42,7 +42,7 @@ class ADAS_Preprocess:
                 imgYUV[i/self.width][i%self.width] = imgByteArray[i]
             
             #[height,width,channel] from cv2.cvtColor, I420 YVU,YV12:YUV
-            imgRGB = cv2.cvtColor(imgYUV,cv2.COLOR_YUV2BGR_I420)
+            imgRGB = cv2.cvtColor(imgYUV,cv2.COLOR_YUV2RGB_I420)
                      
         else:
             frameSize = self.width*self.height*3
