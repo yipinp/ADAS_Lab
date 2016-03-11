@@ -23,8 +23,58 @@ class TNR_Model:
             kernel = np.array([[1,4,6,4,1],[4,16,24,16,4],[6,24,36,24,6],[4,16,24,16,4],[1,4,6,4,1]],np.float32)/256
             imageOut = cv2.filter2D(imageIn,-1,kernel)
         return imageOut
+    
+    def SAD_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,size=3):
+        if isPictureBoundary:
+            sad = np.abs(array0[y_center,x_center,component] - array1[y_center,x_center,component])
+        else:
+            sad = 0
+            for i in range(size):
+                for j in range(size):
+                    sad += np.abs(array0[y_center-size//2 + i ,x_center-size//2 + j,component] - array1[y_center-size//2 + i ,x_center-size//2 + j,component])
+            
+        return sad
         
-    # def temporalFilter(self,imageIn,imgPrev,iir):
+                             
+    def setAlpha(self,sad,alpha,j,i,isBoundary,channel,light=1,ST=0,iir = 768):
+        if light == 0 :
+            alpha[i,j,channel] = 1024 - min(1024,4.5*sad)
+        elif light == 1 and ST == 0:
+            alpha[i,j,channel] = 1024 - min(1024,4*sad)
+        elif light ==1 and ST ==1:
+            alpha[i,j,channel] = 1024 - min(1024,3.0*sad)
+        else:
+            alpha[i,j,channel] = 1024 - min(1024,2.75*sad)
+        
+        #average alpha, top-left,top,top-right,left,current
+        if light > 0 and not(isBoundary):
+            alpha[i,j,channel] =(alpha[i,j,channel]<<1 + alpha[i,j-1,channel]<<1 
+                                +alpha[i-1,j,channel]<<1 + alpha[i-1,j-1,channel]
+                                +alpha[i-1,j+1,channel])>> 3
+            
+            
+        alpha[i,j,channel] = (iir * alpha[i,j,channel]) >> 10
+        
+ 
+    def getAlphaFromSAD(self,imageIn,imagePrev,height,width,channel,alpha):  
+        sad = 0
+        for i in range(height):
+            for j in range(width):
+                isBoundary = (j == 0) or (i == 0) or (j == width -1) or (i == height -1)
+                sad = self.SAD_block(imageIn,imagePrev,j,i,isBoundary,channel) 
+                self.setAlpha(sad,alpha,j,i,isBoundary,channel)
+
+       
+    def alphaBlending(self,imageIn,imagePrev,alpha,j,i,channel,imageOut):
+         imageOut[i,j,channel] =  (alpha[i,j,channel]*imagePrev[i,j,channel]+(1024-alpha[i,j,channel])*imageIn[i,j,channel]>>10
+        
+        
+        
+            
+    def temporalFilterMA(self,imageIn,imagePrev,imageOut,iir):
+         alpha=np.zeros([height,width,3],np.float)
+         self.getAlphaFromSAD(imageIn,imagePrev,height,width,channel,alpha)
+         
          
          
 
