@@ -48,12 +48,12 @@ class TNR_Model:
         
         #average alpha, top-left,top,top-right,left,current
         if light > 0 and not(isBoundary):
-            alpha[i,j,channel] =(alpha[i,j,channel]<<1 + alpha[i,j-1,channel]<<1 
-                                +alpha[i-1,j,channel]<<1 + alpha[i-1,j-1,channel]
-                                +alpha[i-1,j+1,channel])>> 3
+            alpha[i,j,channel] =( (alpha[i,j,channel]<<1) + (alpha[i,j-1,channel]<<1) +(alpha[i-1,j,channel]<<1) + alpha[i-1,j-1,channel] +alpha[i-1,j+1,channel])>> 3
             
             
         alpha[i,j,channel] = (iir * alpha[i,j,channel]) >> 10
+        alpha[i,j,channel] = 512
+        
         
  
     def getAlphaFromSAD(self,imageIn,imagePrev,height,width,channel,alpha):  
@@ -66,16 +66,31 @@ class TNR_Model:
 
        
     def alphaBlending(self,imageIn,imagePrev,alpha,j,i,channel,imageOut):
-         imageOut[i,j,channel] =  (alpha[i,j,channel]*imagePrev[i,j,channel]+(1024-alpha[i,j,channel])*imageIn[i,j,channel]>>10
+         imageOut[i,j,channel] =  (alpha[i,j,channel]*imagePrev[i,j,channel]+(1024-alpha[i,j,channel])*imageIn[i,j,channel])>>10
         
         
-        
+    def betaBlending(self,imageSpatial,temporalFilter,j,i,channel,alpha,image3DOut):
+        beta = 1024 - alpha[i,j,channel]
+        beta = min(beta,400)
+        image3DOut[i,j,channel] = (beta*imageSpatial[i,j,channel] + (1024-beta)*imageSpatial[i,j,channel]) >> 10
             
-    def temporalFilterMA(self,imageIn,imagePrev,imageOut,iir):
-         alpha=np.zeros([height,width,3],np.float)
-         self.getAlphaFromSAD(imageIn,imagePrev,height,width,channel,alpha)
-         
-         
+    def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel):
+         alpha=np.zeros([height,width,channel],np.uint32)
+         imageTemporal = np.zeros([height,width,channel],np.uint8)
+         image3DOut = np.zeros([height,width,channel],np.uint8)
+         ST = 0
+         for k in range(channel):       
+             self.getAlphaFromSAD(imageSpatial,imagePrev,height,width,k,alpha)
+             
+         for i in range(height):
+            for j in range(width):
+                for k in range(channel):
+                    self.alphaBlending(imageIn,imagePrev,alpha,j,i,k,imageTemporal)
+                    self.betaBlending(imageSpatial,imageTemporal,j,i,k,alpha,image3DOut)
+         if ST == 0:            
+            image3DOut = imageTemporal
+         #Beta blending
+         return image3DOut
          
 
 
@@ -85,19 +100,27 @@ if __name__ == "__main__":
     filename = r"\Daylight_00000.jpeg"
     inputImage = os.getcwd() + filename
     inputT = "JPG"
-    prep_jpg = pp.ADAS_Preprocess(inputImage,inputType=inputT)   
-    img = prep_jpg.read2DImageFromSequence()
+    prep_jpg = pp.ADAS_Preprocess(inputImage,inputType=inputT) 
     TNR = TNR_Model()
-    imgOut = TNR.spatialFilterFrame(img,2)
-    plt.subplot(121)
-    plt.imshow(img)
-    plt.title('Origin')
-    plt.subplot(122)
-    plt.imshow(imgOut)
-    plt.title('TNR out')
+    for nframes in range(10):
+        print("frame is :%s"%nframes)
+        img = prep_jpg.read2DImageFromSequence()
+        height,width,channel = img.shape
+        if nframes == 0 :
+            imgPrev = np.zeros([height,width,channel],np.uint8)
+        imgOut = TNR.spatialFilterFrame(img,2)    
+        img3DOut = TNR.temporalFilterMA(imgOut,img,imgPrev,height,width,channel)
+        imgPrev = img3DOut
+        cv2.imwrite("TNR_test_" + str(nframes) + ".jpg",img3DOut)
+       #plt.subplot(121)
+       # plt.imshow(img)
+       # plt.title('Origin')
+       # plt.subplot(122)
+       # plt.imshow(img3DOut)
+       # plt.title('TNR out')
     del(prep_jpg)
     del(TNR)
-    
+    """   
     #filename = r"\akiyo_qcif.yuv"
     filename = r"\out.yuv"
     inputImage = os.getcwd() + filename
@@ -119,3 +142,4 @@ if __name__ == "__main__":
     cv2.imwrite("in.jpg",img)
     del(prep)
     del(TNR)
+   """
