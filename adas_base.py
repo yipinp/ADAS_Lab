@@ -114,8 +114,26 @@ class Adas_base :
     """
         noise model
     """
+    
+    def saltAndPepperForRGB(self,img,percetage,width,height):
+        NoiseNum = int(width*height*percetage)
+        for i in range(NoiseNum):
+            randx    = random.randint(0,width-1)
+            randy    = random.randint(0,height-1)
+            print img.shape,randx,randy
+            if random.randint(0,1):
+                img[randy,randx,0] =  0
+                img[randy,randx,1] =  0
+                img[randy,randx,2] =  0
+            else :
+                img[randy,randx,0] =  255
+                img[randy,randx,1] =  255
+                img[randy,randx,2] =  255
+                
+        return img
+        
 
-    def saltAndPepper(self,img,percetage,width,height):
+    def saltAndPepperForYUV(self,img,percetage,width,height):
         imgsrc = bytearray(img)
         NoiseNumY = int(width*height*percetage)
         NoiseNumUV = int(width*height/4 *percetage)
@@ -151,9 +169,27 @@ class Adas_base :
         #Convert YUV to RGB,[height,width,channel]
         imgRGB = cv2.cvtColor(imgArray,cv2.COLOR_YUV2BGR_I420) 
 
-        return imgRGB            
+        return imgRGB  
+
+    """ box-muller"""
+    def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
+        img = imgIn
+        level = 80
+        gray = 255
+        r1 = np.random.random_sample()
+        r2 = np.random.random_sample()
+        z1 = level*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+        z2 = level*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+        for i in xrange(0,height):
+            for j in xrange(0,width,2):
+                img[i,j,0] = np.clip(int(img[i,j,0] + z1),0,gray)
+                img[i,j+1,0] = np.clip(int(img[i,j,0] + z2),0,gray)
+                img[i,j,1] = np.clip(int(img[i,j,1] + z1),0,gray)
+                img[i,j+1,1] = np.clip(int(img[i,j,1] + z2),0,gray)
+                img[i,j,2] = np.clip(int(img[i,j,2] + z1),0,gray)
+                img[i,j+1,2] = np.clip(int(img[i,j,2] + z2),0,gray)
             
-    
+        return img
     
     
     """
@@ -248,12 +284,14 @@ if __name__ == "__main__":
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    prep = Adas_base(inputImage,width,height,inputType,outputType)
-    rgb = prep.read2DImageFromSequence()
-    cv2.imwrite("rgb_out.png",rgb)
-    f = open("rgb_raw.bin","wb+")
-    f.write(rgb)
-    f.close()
+    test = Adas_base(inputImage,width,height,inputType,outputType)
+    rgb = test.read2DImageFromSequence()
+    salt_noise = test.saltAndPepperForRGB(rgb,0.01,width,height)
+    awg_noise = test.GaussianWhiteNoiseForRGB(rgb,width,height)
+    cv2.imwrite("rgb.png",rgb)
+    cv2.imwrite("rgb_salt.png",salt_noise)
+    cv2.imwrite("rgb_awg.png",awg_noise)
+
     #cv2.imshow("test",prep.read2DImageFromSequence())    
-    del(prep)       
+    del(test)       
     
