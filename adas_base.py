@@ -12,6 +12,7 @@ from PIL import Image
 import random
 import copy
 import pylab as pl
+from scipy import fftpack
 
 class Adas_base :
     def __init__(self,filename,width=0,height=0,inputType="YUV420",outputType = "RGB"):    
@@ -175,7 +176,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 10
+        level = 80
         gray = 255
         zu = []
         zv = []
@@ -200,7 +201,39 @@ class Adas_base :
        # pl.psd(zu+zv)
        # pl.show()
         return img
-    
+        
+    """Add LPF for white Gaussian Noise before adding to original img for real isp processing"""    
+    def GaussianWhiteNoiseForRGB2(self,imgIn,width,height):
+        noiseImg = np.zeros([height,width])
+        level = 80
+        for i in xrange(0,height):
+            for j in xrange(0,width,2):
+                r1 = np.random.random_sample()
+                r2 = np.random.random_sample()
+                z1 = level*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                z2 = level*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                noiseImg[i,j] = z1
+                noiseImg[i,j+1] = z2
+         
+        """lpf"""
+        noiseImg = cv2.GaussianBlur(noiseImg,(3,3),0)
+        #pl.psd(noiseImg)
+        #pl.show()
+        """ Add noise to image"""
+        imgIn[:,:,0] = np.clip(np.add(imgIn[:,:,0],noiseImg),0,255)
+        imgIn[:,:,1] = np.clip(np.add(imgIn[:,:,1],noiseImg),0,255)
+        imgIn[:,:,2] = np.clip(np.add(imgIn[:,:,2],noiseImg),0,255)
+        
+        
+        """check frequency"""
+        #zf = fftpack.fft2(noiseImg)   
+        #F2 = fftpack.fftshift(zf)
+        #psd = np.abs(F2)**2
+        #pl.figure(1)
+        #pl.clf()
+        #pl.imshow(psd)
+        #pl.show()
+        return imgIn
     
     """
        Temporal noise reduction algorithm 
@@ -298,12 +331,14 @@ if __name__ == "__main__":
     rgb = test.read2DImageFromSequence()
     salt_noise = copy.deepcopy(rgb)
     awg_noise = copy.deepcopy(rgb)
+    awg_noise2 = copy.deepcopy(rgb)
     salt_noise = test.saltAndPepperForRGB(salt_noise,0.01,width,height)
     awg_noise = test.GaussianWhiteNoiseForRGB(awg_noise,width,height)
+    awg_noise2 = test.GaussianWhiteNoiseForRGB2(awg_noise2,width,height);
     cv2.imwrite("rgb_salt.png",salt_noise)
     cv2.imwrite("rgb.png",rgb)
     cv2.imwrite("rgb_awg.png",awg_noise)
-
+    cv2.imwrite("rgb_awg2.png",awg_noise2)
     #cv2.imshow("test",prep.read2DImageFromSequence())    
     del(test)       
     
