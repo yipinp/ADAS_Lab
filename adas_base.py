@@ -10,6 +10,8 @@ import numpy as np
 import os
 from PIL import Image
 import random
+import copy
+import pylab as pl
 
 class Adas_base :
     def __init__(self,filename,width=0,height=0,inputType="YUV420",outputType = "RGB"):    
@@ -120,7 +122,7 @@ class Adas_base :
         for i in range(NoiseNum):
             randx    = random.randint(0,width-1)
             randy    = random.randint(0,height-1)
-            print img.shape,randx,randy
+            #print img.shape,randx,randy
             if random.randint(0,1):
                 img[randy,randx,0] =  0
                 img[randy,randx,1] =  0
@@ -138,7 +140,6 @@ class Adas_base :
         NoiseNumY = int(width*height*percetage)
         NoiseNumUV = int(width*height/4 *percetage)
         imgdst = imgsrc
-        print("%s %s"% (width,height))
 
         #Y channel
         for i in range(NoiseNumY):
@@ -174,21 +175,30 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 80
+        level = 10
         gray = 255
-        r1 = np.random.random_sample()
-        r2 = np.random.random_sample()
-        z1 = level*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
-        z2 = level*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+        zu = []
+        zv = []
         for i in xrange(0,height):
             for j in xrange(0,width,2):
+                r1 = np.random.random_sample()
+                r2 = np.random.random_sample()
+                z1 = level*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                z2 = level*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                zu.append(z1)
+                zv.append(z2)
                 img[i,j,0] = np.clip(int(img[i,j,0] + z1),0,gray)
-                img[i,j+1,0] = np.clip(int(img[i,j,0] + z2),0,gray)
+                img[i,j+1,0] = np.clip(int(img[i,j+1,0] + z2),0,gray)
                 img[i,j,1] = np.clip(int(img[i,j,1] + z1),0,gray)
-                img[i,j+1,1] = np.clip(int(img[i,j,1] + z2),0,gray)
+                img[i,j+1,1] = np.clip(int(img[i,j+1,1] + z2),0,gray)
                 img[i,j,2] = np.clip(int(img[i,j,2] + z1),0,gray)
-                img[i,j+1,2] = np.clip(int(img[i,j,2] + z2),0,gray)
+                img[i,j+1,2] = np.clip(int(img[i,j+1,2] + z2),0,gray)
             
+       # pl.subplot(211)
+       # pl.hist(zu+zv,bins=200,normed=True)
+       # pl.subplot(212)
+       # pl.psd(zu+zv)
+       # pl.show()
         return img
     
     
@@ -286,10 +296,12 @@ if __name__ == "__main__":
     outputType = "RGB"
     test = Adas_base(inputImage,width,height,inputType,outputType)
     rgb = test.read2DImageFromSequence()
-    salt_noise = test.saltAndPepperForRGB(rgb,0.01,width,height)
-    awg_noise = test.GaussianWhiteNoiseForRGB(rgb,width,height)
-    cv2.imwrite("rgb.png",rgb)
+    salt_noise = copy.deepcopy(rgb)
+    awg_noise = copy.deepcopy(rgb)
+    salt_noise = test.saltAndPepperForRGB(salt_noise,0.01,width,height)
+    awg_noise = test.GaussianWhiteNoiseForRGB(awg_noise,width,height)
     cv2.imwrite("rgb_salt.png",salt_noise)
+    cv2.imwrite("rgb.png",rgb)
     cv2.imwrite("rgb_awg.png",awg_noise)
 
     #cv2.imshow("test",prep.read2DImageFromSequence())    
