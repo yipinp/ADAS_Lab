@@ -176,7 +176,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 80
+        level = 40
         gray = 255
         zu = []
         zv = []
@@ -205,7 +205,7 @@ class Adas_base :
     """Add LPF for white Gaussian Noise before adding to original img for real isp processing"""    
     def GaussianWhiteNoiseForRGB2(self,imgIn,width,height):
         noiseImg = np.zeros([height,width])
-        level = 80
+        level = 40
         for i in xrange(0,height):
             for j in xrange(0,width,2):
                 r1 = np.random.random_sample()
@@ -216,6 +216,7 @@ class Adas_base :
                 noiseImg[i,j+1] = z2
          
         """lpf"""
+        cv2.imwrite("random_noise.png",noiseImg)
         noiseImg = cv2.GaussianBlur(noiseImg,(3,3),0)
         #pl.psd(noiseImg)
         #pl.show()
@@ -327,6 +328,7 @@ if __name__ == "__main__":
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
+    frames = 30
     test = Adas_base(inputImage,width,height,inputType,outputType)
     rgb = test.read2DImageFromSequence()
     salt_noise = copy.deepcopy(rgb)
@@ -334,11 +336,26 @@ if __name__ == "__main__":
     awg_noise2 = copy.deepcopy(rgb)
     salt_noise = test.saltAndPepperForRGB(salt_noise,0.01,width,height)
     awg_noise = test.GaussianWhiteNoiseForRGB(awg_noise,width,height)
-    awg_noise2 = test.GaussianWhiteNoiseForRGB2(awg_noise2,width,height);
+    awg_noise2 = test.GaussianWhiteNoiseForRGB2(awg_noise2,width,height); 
     cv2.imwrite("rgb_salt.png",salt_noise)
     cv2.imwrite("rgb.png",rgb)
     cv2.imwrite("rgb_awg.png",awg_noise)
     cv2.imwrite("rgb_awg2.png",awg_noise2)
-    #cv2.imshow("test",prep.read2DImageFromSequence())    
+    #cv2.imshow("test",prep.read2DImageFromSequence())   
+
+    #test average frames to reduce noise with gaussian noise model
+    result = np.zeros([height,width,3],np.uint32)    
+    for i in xrange(frames):
+        temp = copy.deepcopy(rgb)
+        awg_noise3 = test.GaussianWhiteNoiseForRGB(temp,width,height)
+        #cv2.imwrite("noise_"+str(i)+".png",awg_noise3)
+        result = np.add(result,awg_noise3)
+        print awg_noise3[0,0,0],result[0,0,0]
+    result = np.divide(result,frames)
+    out = np.zeros([height,width,3],np.uint8)
+    out = np.asarray(result[:,:,:],np.uint8)
+    print out[0,0,0]
+    cv2.imwrite("rgb_result_out.png",out)
+    
     del(test)       
     
