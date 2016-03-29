@@ -11,7 +11,7 @@ import os
 from PIL import Image
 import random
 import copy
-import pylab as pl
+import pylab as plt
 from scipy import fftpack
 
 class Adas_base :
@@ -76,7 +76,7 @@ class Adas_base :
      
         #[height,width,channel] from cv2.cvtColor, I420 YVU,YV12:YUV
         imgYUV = cv2.cvtColor(imgRGB,cv2.COLOR_BGR2YUV)
-        return imgYUV            
+        return imgYUV     
         
             
     def readImageLumaOnly(self):
@@ -342,7 +342,7 @@ if __name__ == "__main__":
     cv2.imwrite("rgb_awg.png",awg_noise)
     cv2.imwrite("rgb_awg2.png",awg_noise2)
     #cv2.imshow("test",prep.read2DImageFromSequence())   
-
+    """
     #test average frames to reduce noise with gaussian noise model
     result = np.zeros([height,width,3],np.uint32)    
     for i in xrange(frames):
@@ -350,12 +350,63 @@ if __name__ == "__main__":
         awg_noise3 = test.GaussianWhiteNoiseForRGB(temp,width,height)
         #cv2.imwrite("noise_"+str(i)+".png",awg_noise3)
         result = np.add(result,awg_noise3)
-        print awg_noise3[0,0,0],result[0,0,0]
+    
     result = np.divide(result,frames)
     out = np.zeros([height,width,3],np.uint8)
     out = np.asarray(result[:,:,:],np.uint8)
     print out[0,0,0]
     cv2.imwrite("rgb_result_out.png",out)
+    
+    #test different image blending for ghost
+    rgb1 = test.read2DImageFromSequence()
+   # cv2.imwrite("rgb1.png",rgb1)
+   # result = np.divide(np.substract(rgb1,rgb),2)
+   # cv2.imwrite("ghost.png",result[:,:,0])
+   # print rgb[0,0,0],rgb1[0,0,0],result[0,0,0]
+   """    
+    #sparse LK 
+    rgb1 = test.read2DImageFromSequence()
+    oldGray = cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
+    newGray = cv2.cvtColor(rgb1,cv2.COLOR_BGR2GRAY)
+    feature_params = dict(maxCorners = 100,qualityLevel=0.3,minDistance = 7, blockSize = 7)
+    lk_params = dict(winSize = (15,15),maxLevel = 2, criteria = (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,10,0.03))
+    p0 = cv2.goodFeaturesToTrack(oldGray,mask = None, **feature_params)
+    
+    p1,st,err = cv2.calcOpticalFlowPyrLK(oldGray,newGray,p0,None,**lk_params)
+    print len(p0),len(p1)
+
+    good_new = p1[st == 1]
+    good_old = p0[st == 1]
+    mask =  np.zeros_like(rgb1)
+    color = np.random.randint(0,255,(100,3))
+    # draw the tracks
+    for i,(new,old) in enumerate(zip(good_new,good_old)):
+        a,b = new.ravel()
+        c,d = old.ravel()
+
+        cv2.line(mask, (int(a),int(b)),(int(c),int(d)), color[i].tolist(), 2)
+
+        cv2.circle(rgb1,(a,b),5,color[i].tolist(),-1)
+
+    img = cv2.add(rgb1,mask)
+    cv2.imwrite('frame.png',img)   
+    
+    #gradients
+    oldGray = cv2.cvtColor(awg_noise,cv2.COLOR_BGR2GRAY)
+    laplacian = cv2.Laplacian(oldGray,cv2.CV_64F)
+    sobelx = cv2.Sobel(oldGray,cv2.CV_64F,1,0,ksize=5)
+    sobely = cv2.Sobel(oldGray,cv2.CV_64F,0,1,ksize=5)
+    cv2.imwrite("laplacian.png",laplacian)
+    cv2.imwrite("sobelx.png",sobelx)
+    cv2.imwrite("sobely.png",sobely)
+    #plt.subplot(2,2,1),plt.imshow(oldGray,cmap = 'gray')
+    #plt.title('Original'), plt.xticks([]), plt.yticks([])
+    #plt.subplot(2,2,2),plt.imshow(laplacian,cmap = 'gray')
+    #plt.title('Laplacian'), plt.xticks([]), plt.yticks([])
+    #plt.subplot(2,2,3),plt.imshow(sobelx,cmap = 'gray')
+    #plt.title('Sobel X'), plt.xticks([]), plt.yticks([])
+    #plt.subplot(2,2,4),plt.imshow(sobely,cmap = 'gray')
+    #plt.title('Sobel Y'), plt.xticks([]), plt.yticks([])
     
     del(test)       
     
