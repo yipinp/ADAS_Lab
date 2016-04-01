@@ -28,6 +28,15 @@ class Adas_base :
             self.fid.close()
     
     
+    #ffmpeg caller
+    def  avi2YUV(self,videoName,number):
+        #FFMPEG setting
+        ffmpeg_exe =  os.getcwd() + r"\ffmpeg\ffmpeg.exe"
+        cmdOptions  = ['%s '%(ffmpeg_exe)];      
+        cmdOptions += ['-i %s -vframes %s -y -an %s.yuv'%(videoName+".avi", number, videoName)]; 
+        cmd = "".join(cmdOptions)
+        os.system(cmd)    
+    
     
     """Color space convert
      inputType : YUV420,YUV,GRAY,RGB,JPG
@@ -176,7 +185,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 40
+        level = 30
         gray = 255
         zu = []
         zv = []
@@ -244,24 +253,26 @@ class Adas_base :
              imageOut = cv2.GaussianBlur(imageIn,(3,3),0)
          elif mode == 1:
              imageOut = cv2.GaussianBlur(imageIn,(5,5),0)
+         elif mode == 2 :
+             imageOut = cv2.bilateralFilter(imageIn,5,30,30)
          else:
              kernel = np.array([[1,4,6,4,1],[4,16,24,16,4],[6,24,36,24,6],[4,16,24,16,4],[1,4,6,4,1]],np.float32)/256
              imageOut = cv2.filter2D(imageIn,-1,kernel)
+        
          return imageOut
     
-    def SAD_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,size=3):
+    def SAD_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,offsetx = 0,offsety = 0,size=3):
          if isPictureBoundary:
-             sad = np.abs(array0[y_center,x_center,component] - array1[y_center,x_center,component])
+             sad = np.abs(np.substract(array0[y_center,x_center,component] - array1[y_center+offsety,x_center+offsetx,component],dtype=np.int32))
          else:
-             sad = 0
-             for i in range(size):
-                for j in range(size):
-                    sad += np.abs(array0[y_center-size//2 + i ,x_center-size//2 + j,component] - array1[y_center-size//2 + i ,x_center-size//2 + j,component])
-            
+             sad = np.sum(
+                     np.abs(
+                         np.subtract(array0[y_center-size/2:y_center+size/2+1 ,x_center-size/2:x_center+size/2+1,component] 
+                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),dtype=np.int32))  
          return sad
         
                              
-    def setAlpha(self,sad,alpha,j,i,isBoundary,channel,light=1,ST=0,iir = 768):
+    def setAlpha(self,sad,alpha,i,j,isBoundary,channel,light=1,ST=0,iir = 768):
         if light == 0 :
             alpha[i,j,channel] = 1024 - min(1024,4.5*sad)
         elif light == 1 and ST == 0:
@@ -274,10 +285,9 @@ class Adas_base :
         #average alpha, top-left,top,top-right,left,current
         if light > 0 and not(isBoundary):
             alpha[i,j,channel] =( (alpha[i,j,channel]<<1) + (alpha[i,j-1,channel]<<1) +(alpha[i-1,j,channel]<<1) + alpha[i-1,j-1,channel] +alpha[i-1,j+1,channel])>> 3
-            
-            
+              
         alpha[i,j,channel] = (iir * alpha[i,j,channel]) >> 10
-        alpha[i,j,channel] = 512
+        #alpha[i,j,channel] = 512
         
         
  
@@ -287,7 +297,7 @@ class Adas_base :
             for j in range(width):
                 isBoundary = (j == 0) or (i == 0) or (j == width -1) or (i == height -1)
                 sad = self.SAD_block(imageIn,imagePrev,j,i,isBoundary,channel) 
-                self.setAlpha(sad,alpha,j,i,isBoundary,channel)
+                self.setAlpha(sad,alpha,i,j,isBoundary,channel)
 
        
     def alphaBlending(self,imageIn,imagePrev,alpha,j,i,channel,imageOut):
@@ -299,6 +309,9 @@ class Adas_base :
         beta = min(beta,400)
         image3DOut[i,j,channel] = (beta*imageSpatial[i,j,channel] + (1024-beta)*imageSpatial[i,j,channel]) >> 10
             
+    """ 
+       R/G/B or Y/U/V seperate channel processing, motion detection not estimation, alpha blending and beta blending
+    """
     def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel):
          alpha=np.zeros([height,width,channel],np.uint32)
          imageTemporal = np.zeros([height,width,channel],np.uint8)
@@ -316,20 +329,153 @@ class Adas_base :
             image3DOut = imageTemporal
          #Beta blending
          return image3DOut
+         
+         
+         
+    def generateOpticalFlowView(self,p0,p1,imgIn,frame): 
+        imgT  = copy.deepcopy(imgIn)
+        good_new = p1
+        good_old = p0
+        mask =  np.zeros_like(imgIn)
+        color = np.random.randint(0,255,(100,3))
+        # draw the tracks
+        for i,(new,old) in enumerate(zip(good_new,good_old)):
+            a,b = new.ravel()
+            c,d = old.ravel()
+            print a,b,c,d
+
+            cv2.line(mask, (int(a),int(b)),(int(c),int(d)), color[i%100].tolist(), 2)
+            cv2.circle(imgT,(a,b),5,color[i%100].tolist(),-1)
+
+        img = cv2.add(imgT,mask)
+        cv2.imwrite('opticalFlow'+str(frame)+'.png',img)  
+        
+        
+        
+    def callPixelOpticalFlowAnalysis(self,y,x,imgInSpatial,imgPrevSpatial,weight_sad,old_ps,new_ps,maxSAD):
+        lk_params = dict(winSize = (15,15),maxLevel = 2, criteria = (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,10,0.03)) 
+        p0 = [[y,x]]
+        p0 = np.float32(np.asarray(p0))
+        p1,st,err = cv2.calcOpticalFlowPyrLK(imgPrevSpatial,imgInSpatial,p0,None,**lk_params)
+        u,v = p1[0]
+        sad = 0
+                     
+        #if detect the optical flow for the pixel, check if the motion vector is reasonable with SAD
+        #if motion vector is out of the boundary, discard it
+        if x + u - 1 > 0 and y+v+1<height and x + u + 1 <width and y + v - 1> 0 : 
+            for c in xrange(3):
+                sad +=(self.SAD_block(imgInSpatial,imgPrevSpatial,x,y,0,c,int(u),int(v))*weight_sad[c])
+                print("Start optical flow analysis...")
+                old_ps.append(p0)
+                new_ps.append(p1)
+        else:
+            sad = maxSAD  #alpha is 0 for the pixel, not use prev buffer as blending
+            
+        return sad
+        
+        
+    def betaCalculate(self,imgIn,beta_map,height,width,weight_sad):
+         meanArray = np.zeros(3,np.uint32)
+         stddevArray = np.zeros(3,np.uint32)
+         for j in xrange(1,height-1):
+             for i in xrange(1,width-1):
+                 for c in xrange(3):
+                     meanArray[c] = np.mean(imgIn[j-1:j+2,i-1:i+2,c],dtype=np.uint32)
+                     stddevArray[c] = (np.sum(np.power(imgIn[j-1:j+2,i-1:i+2,c],2,dtype=np.uint32),dtype=np.uint32))/9.0
+                                                         
+                 mean = meanArray[0]*weight_sad[0] + meanArray[1]*weight_sad[1] + meanArray[2]*weight_sad[2]
+                 stddev = stddevArray[0]*weight_sad[0] + stddevArray[1]*weight_sad[1] + stddevArray[2]*weight_sad[2]
+                 stddev = np.sqrt(stddev - mean**2) 
+                 if  mean < 0.01:
+                     mean = 0.01
+                 activity = stddev/mean
+                 #print mean,stddev,activity
+                 #call sigmod function for 0-1 normalization
+                 beta = 1.0/np.exp(1.0/activity)
+                 beta_map[j,i] = beta 
        
-       
+    """
+        R/G/B,Y/U/V procecss together, not seperate channel for parameters, with simplied optical flow and motion detection
+        alpha and beta blending
+    """           
+    def TNR3D(self,imgIn,imgOut,imgPrevIn,height,width,frame,alphaThres=600):
+         #Spatial filter to imgPrevIn and imgIn
+         imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
+         imgInSpatial = self.spatialFilterFrame(imgIn,2)
+         alpha=np.zeros([height,width,1],np.uint32)
+         sads  = np.zeros([height,width,1],np.uint32)
+         #R,G,B with equal weight
+         weight_sad = (1/3.0,1/3.0,1/3.0)
+         maxSAD = 1024.0
+         minSAD = 0.0
+         maxAlpha = 1024.0
+         minAlpha = 0.0
+         maxBeta = 1024.0
+         minBeta = 0.0
+         old_ps  =[]
+         new_ps = []
+         
+         
+         #calculate SAD and detect the static and moving pixels,all channels together
+         #if SAD is too much, it means absolute moving region, call sparse LK for optical flow vector.
+         #Please notice, if the alphaThreshold is too low, too much optical flow will be called and < 1 pixel mv will be get.
+            
+         for j in xrange(1,height-1):
+             for i in xrange(1,width-1):
+                 sad = 0
+                 for c in xrange(3):
+                     sad += (self.SAD_block(imgInSpatial,imgPrevSpatial,i,j,0,c)*weight_sad[c])
+                       
+                 #if sad is too high, it is moving region, try to call optical flow for the pixel                 
+                 if sad > alphaThres: 
+                     sad = test.callPixelOpticalFlowAnalysis(j,i,imgInSpatial,imgPrevSpatial,weight_sad,old_ps,new_ps,maxSAD)                                             
+                 #set the alpha value for the pixel based on the sad
+                 sads[j,i] = sad
+                 self.setAlpha(sad,alpha,j,i,0,0)
+            
+         #plot sad vs alpha curve
+         if len(old_ps) > 0 :
+             test.generateOpticalFlowView(old_ps,new_ps,imgInSpatial,frame)
+         plt.subplot(211)
+         plt.plot(sads.flatten())
+         plt.subplot(212)
+         plt.plot(alpha.flatten())
+                 
+                 
+                 
+                 
+         #calculate beta based on activity for input and spatial input blending
+         #when the activity is high, it means the pixel variation in the block is high, may be edge
+         # 3x3 fixed block
+         beta_map = np.zeros([height,width],np.float)
+         test.betaCalculate(imgIn,beta_map,height,width,weight_sad)
+                    
+                                                          
+         """beta & alpha blending"""
+         for j in xrange(height):
+             for i in xrange(width):
+                 #print j,i,beta_map[j,i],alpha[j,i,0]
+                 for c in xrange(3):                     
+                     imgOut[j,i,c] = (beta_map[j,i]*np.subtract(imgIn[j,i,c],imgInSpatial[j,i,c],dtype=np.int32)) + imgInSpatial[j,i,c]  
+                     imgOut[j,i,c] = (alpha[j,i,0] *np.subtract(imgPrevIn[j,i,c],imgOut[j,i,c],dtype=np.int32)>>10) + imgOut[j,i,c]
+        
+         return imgOut         
+                 
+                    
        
 if __name__ == "__main__":
     
+        
     #YUV420->RGB
-    filename = r"\akiyo_qcif.yuv"
+    filename = r"\mobile_qcif.yuv"
     inputImage = os.getcwd() + filename
     width = 176
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 30
+    frames = 5
     test = Adas_base(inputImage,width,height,inputType,outputType)
+    """
     rgb = test.read2DImageFromSequence()
     salt_noise = copy.deepcopy(rgb)
     awg_noise = copy.deepcopy(rgb)
@@ -342,6 +488,7 @@ if __name__ == "__main__":
     cv2.imwrite("rgb_awg.png",awg_noise)
     cv2.imwrite("rgb_awg2.png",awg_noise2)
     #cv2.imshow("test",prep.read2DImageFromSequence())   
+    """
     """
     #test average frames to reduce noise with gaussian noise model
     result = np.zeros([height,width,3],np.uint32)    
@@ -363,7 +510,9 @@ if __name__ == "__main__":
    # result = np.divide(np.substract(rgb1,rgb),2)
    # cv2.imwrite("ghost.png",result[:,:,0])
    # print rgb[0,0,0],rgb1[0,0,0],result[0,0,0]
-   """    
+   """  
+   
+    """
     #sparse LK 
     rgb1 = test.read2DImageFromSequence()
     oldGray = cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
@@ -371,6 +520,7 @@ if __name__ == "__main__":
     feature_params = dict(maxCorners = 100,qualityLevel=0.3,minDistance = 7, blockSize = 7)
     lk_params = dict(winSize = (15,15),maxLevel = 2, criteria = (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,10,0.03))
     p0 = cv2.goodFeaturesToTrack(oldGray,mask = None, **feature_params)
+
     
     p1,st,err = cv2.calcOpticalFlowPyrLK(oldGray,newGray,p0,None,**lk_params)
     print len(p0),len(p1)
@@ -407,6 +557,37 @@ if __name__ == "__main__":
     #plt.title('Sobel X'), plt.xticks([]), plt.yticks([])
     #plt.subplot(2,2,4),plt.imshow(sobely,cmap = 'gray')
     #plt.title('Sobel Y'), plt.xticks([]), plt.yticks([])
+    """
+
+    imgOut = np.zeros([height,width,3],np.uint8)
+    imgPrev = np.zeros([height,width,3],np.uint8)
+    tnrInputName = "TnrIn"
+    tnrOutName  = "TnrOut"
+
+    fourcc = cv2.cv.FOURCC('M','J','P','G')
+    videoW = cv2.VideoWriter(tnrInputName + ".avi",fourcc,1.0,(width,height),True)
+    videoWR = cv2.VideoWriter(tnrOutName +".avi",fourcc,1.0,(width,height),True)
+    for i in xrange(frames):
+        print i
+        rgbIn = test.read2DImageFromSequence()
+        noisy_rgb = copy.deepcopy(rgbIn)    
+        noisy_rgb = test.GaussianWhiteNoiseForRGB(rgbIn,width,height)
+        #cv2.imwrite("frame"+str(i)+".png",noisy_rgb)
+        videoW.write(noisy_rgb)
+        if i == 0 :
+            imgOut = test.spatialFilterFrame(noisy_rgb,2)
+        else:
+            imgOut = test.TNR3D(noisy_rgb,imgOut,imgPrev,height,width,i) 
+        
+        imgPrev = copy.deepcopy(imgOut)
+        videoWR.write(imgOut)
+        #cv2.imwrite("tnr_"+str(i)+".png",imgOut)
+    videoW.release()
+    videoWR.release()
+    
+    #convert to YUV with FFMPEG to compare them at the same time(yuvplayer)
+    test.avi2YUV(tnrInputName,frames)
+    test.avi2YUV(tnrOutName,frames)
     
     del(test)       
     
