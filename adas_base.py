@@ -270,7 +270,15 @@ class Adas_base :
                          np.subtract(array0[y_center-size/2:y_center+size/2+1 ,x_center-size/2:x_center+size/2+1,component] 
                              ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),dtype=np.int32))  
          return sad
-        
+         
+    #Euclidean distancec     
+    def Euc_distance_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,offsetx = 0,offsety = 0,size=3):
+        distance = np.sqrt(
+                    np.sum(
+                     np.power(
+                         np.subtract(array0[y_center-size/2:y_center+size/2+1 ,x_center-size/2:x_center+size/2+1,component] 
+                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),2,dtype=np.int32)))  
+        return distance
                              
     def setAlpha(self,sad,alpha,i,j,isBoundary,channel,light=1,ST=0,iir = 768):
         if light == 0 :
@@ -461,7 +469,63 @@ class Adas_base :
         
          return imgOut         
                  
+    """NLM for 3d"""
+    def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,sad_thres=600):
+        imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
+        imgInSpatial = self.spatialFilterFrame(imgIn,2)
+        candiateNum = 18
+        sad_candidate = np.zeros(candiateNum,np.uint32)
+        distance_candidate = np.zeros(candiateNum,np.uint32)
+        distance_weight = np.zeros(candiateNum,np.float)
+        total_distance = np.zeros([height,width],np.float)
+        offset = [(0,0),(0,-1),(0,1),(-1,0),(-1,-1),(-1,1),(1,0),(1,-1),(1,1)]
+        #R,G,B with equal weight
+        weight_sad = (1/3.0,1/3.0,1/3.0)
+        #Gaussian variance
+        variance = 1.0 
+
+        #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
+        for j in xrange(2,height-2):
+             for i in xrange(2,width-2):
+                 #idx 0-8  for prev picture, 9-17 for intra picture
+                 for idx in xrange(18):
+                     offsety,offsetx = offset[idx%9]
+                     if idx > 8 :
+                         imgIn2 = imgPrevSpatial                        
+                     else:
+                         imgIn2 = imgInSpatial
+                     for c in xrange(3):
+                         sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
+                         distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
+                     total_distance[j,i] += distance_candidate[idx]
+                     print total_distance[j,i]
+                
+                 #check sad threshold to select the reasonable candidate position and do NLM blending
+                 for idx in xrange(18):
+                     if sad_candidate[idx] > sad_thres:
+                         distance_weight[idx] = 0.0
+                     else:
+                         #Gaussian weight based on euclidean distance                
+                         distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance[j,i]*(variance**2)))
+                         #print idx,distance_weight[idx],total_distance[j,i],distance_candidate[idx],total_distance[j,i]*(variance**2),distance_candidate[idx]/(total_distance*(variance**2))
                     
+                         
+                 #normalization weight
+                 for idx in xrange(18):
+                     distance_weight[idx] /= total_distance[j,i]
+                
+                 for c in xrange(3):
+                     pixel_v = 0.0
+                     for idx in xrange(18):
+                         if idx > 8 :
+                             imgIn2 = imgPrevIn
+                         else:
+                             imgIn2 = imgIn                                    
+                         pixel_v += distance_weight[idx]*imgIn2[j,i,c]
+                     
+
+                     imgOut[j,i,c] =int(pixel_v)  
+        return imgOut
        
 if __name__ == "__main__":
     
@@ -577,7 +641,7 @@ if __name__ == "__main__":
         if i == 0 :
             imgOut = test.spatialFilterFrame(noisy_rgb,2)
         else:
-            imgOut = test.TNR3D(noisy_rgb,imgOut,imgPrev,height,width,i) 
+            imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i) 
         
         imgPrev = copy.deepcopy(imgOut)
         videoWR.write(imgOut)
