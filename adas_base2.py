@@ -13,6 +13,7 @@ import random
 import copy
 import pylab as plt
 from scipy import fftpack
+import math
 
 class Adas_base :
     def __init__(self,filename,width=0,height=0,inputType="YUV420",outputType = "RGB"):    
@@ -20,7 +21,8 @@ class Adas_base :
         self.inputType = inputType
         self.outputType = outputType
         self.width = width
-        self.height = height    
+        self.height = height   
+        self.openImageSequence()
     
     
     def __del__(self):
@@ -112,7 +114,6 @@ class Adas_base :
                        
                        
     def read2DImageFromSequence(self):  
-        self.openImageSequence()
         if (self.inputType == "YUV420" or self.inputType == "YUV") and self.outputType == "RGB":            
             return self.YUV2RGB() 
         elif self.inputType == "JPG":
@@ -185,7 +186,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 30
+        level = 50
         gray = 255
         zu = []
         zv = []
@@ -214,7 +215,7 @@ class Adas_base :
     """Add LPF for white Gaussian Noise before adding to original img for real isp processing"""    
     def GaussianWhiteNoiseForRGB2(self,imgIn,width,height):
         noiseImg = np.zeros([height,width])
-        level = 40
+        level = 50
         for i in xrange(0,height):
             for j in xrange(0,width,2):
                 r1 = np.random.random_sample()
@@ -263,7 +264,7 @@ class Adas_base :
     
     def SAD_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,offsetx = 0,offsety = 0,size=3):
          if isPictureBoundary:
-             sad = np.abs(np.substract(array0[y_center,x_center,component] - array1[y_center+offsety,x_center+offsetx,component],dtype=np.int32))
+             sad = np.abs(np.subtract(array0[y_center,x_center,component] , array1[y_center+offsety,x_center+offsetx,component],dtype=np.int32))
          else:
              sad = np.sum(
                      np.abs(
@@ -470,7 +471,7 @@ class Adas_base :
          return imgOut         
                  
     """NLM for 3d"""
-    def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,sad_thres=600):
+    def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,sad_thres=280):
         imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
         imgInSpatial = self.spatialFilterFrame(imgIn,2)
         candiateNum = 18
@@ -482,67 +483,92 @@ class Adas_base :
         weight_sad = (1/3.0,1/3.0,1/3.0)
         #Gaussian variance
         variance = 1.0 
+        
 
         #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
-        for j in xrange(2,height-2):
-             for i in xrange(2,width-2): 
+        for j in xrange(height):
+             for i in xrange(width): 
                  total_distance = 0.0
                  total_weight = 0.0
-                 #idx 0-8  for prev picture, 9-17 for intra picture
-                 for idx in xrange(18):
-                     offsety,offsetx = offset[idx%9]
-                     distance_candidate[idx] = 0.0
-                     distance_weight[idx] = 0.0
-                     sad_candidate[idx] = 0.0
-                     if idx > 8 :
-                         imgIn2 = imgPrevSpatial                        
-                     else:
-                         imgIn2 = imgInSpatial
-                     for c in xrange(3):
-                         sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
-                         distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
-                     total_distance += distance_candidate[idx]
-                 total_distance /= candiateNum
-      
-                 #check sad threshold to select the reasonable candidate position and do NLM blending
-                 for idx in xrange(18):
-                     if sad_candidate[idx] > sad_thres:
+                 if (j > 2 and j < height - 2) and (i > 2 and i < width - 2):
+                     #idx 0-8  for prev picture, 9-17 for intra picture                
+                     for idx in xrange(18):
+                         offsety,offsetx = offset[idx%9]
+                         distance_candidate[idx] = 0.0
                          distance_weight[idx] = 0.0
-                     else:
-                         #Gaussian weight based on euclidean distance                
-                         distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance*(variance**2)))
-                         total_weight += distance_weight[idx]
-                         #print idx,distance_weight[idx],total_distance,distance_candidate[idx]
+                         sad_candidate[idx] = 0.0
+                         if idx > 8 :
+                             imgIn2 = imgPrevSpatial                        
+                         else:
+                             imgIn2 = imgInSpatial
+                         for c in xrange(3):
+                             sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
+                             distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
+                             total_distance += distance_candidate[idx]
+                  
+                     total_distance /= candiateNum
+                 
+                     #set adaptive sadThres
+      
+                     #check sad threshold to select the reasonable candidate position and do NLM blending
+        
+                     for idx in xrange(18):
+                         if sad_candidate[idx] > sad_thres:
+                             distance_weight[idx] = 0.0
+                         else:
+                             #Gaussian weight based on euclidean distance                
+                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance*(variance**2)))
+                             total_weight += distance_weight[idx]
+                             #print j,i,idx,distance_weight[idx],total_distance,distance_candidate[idx]
                     
                          
-                 #normalization weight
-                 for idx in xrange(18):
-                     distance_weight[idx] /= total_weight
-                
-                 for c in xrange(3):
-                     pixel_v = 0.0
+                     #normalization weight
                      for idx in xrange(18):
-                         if idx > 8 :
-                             imgIn2 = imgPrevIn
-                         else:
-                             imgIn2 = imgIn                                    
-                         pixel_v += distance_weight[idx]*imgIn2[j,i,c]
+                         distance_weight[idx] /= total_weight
+                         
+                
+                     for c in xrange(3):
+                         pixel_v = 0.0
+                         for idx in xrange(18):
+                             if idx > 8 :
+                                 imgIn2 = imgPrevIn
+                             else:
+                                 imgIn2 = imgIn                                    
+                             pixel_v += distance_weight[idx]*imgIn2[j,i,c]
+                     imgOut[j,i,c] =int(pixel_v)
                      
-
-                     imgOut[j,i,c] =int(pixel_v)  
+                 else :
+                     for c in xrange(3):
+                         imgOut[j,i,c] = imgInSpatial[j,i,c]                    
+                     
         return imgOut
+        
+        
+    """Quality checking"""
+    def QualityCheck(self,img1,img2,mode = 'PSNR'):
+        if mode == 'PSNR':
+            mse = np.mean((img1-img2)**2)
+            if mse == 0:
+                return 100
+            PIXEL_MAX = 255.0
+            return 20*math.log10(PIXEL_MAX/math.sqrt(mse))
+                                
+        
+        
+        
        
 if __name__ == "__main__":
     
         
     #YUV420->RGB
     filename = r"\mobile_qcif.yuv"
+    #filename = r"\coastguard_cif.yuv"
     inputImage = os.getcwd() + filename
-    width = 176
+    width =  176
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 5
+    frames = 4
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -630,13 +656,18 @@ if __name__ == "__main__":
 
     imgOut = np.zeros([height,width,3],np.uint8)
     imgPrev = np.zeros([height,width,3],np.uint8)
+    imgPrev2 = np.zeros([height,width,3],np.uint8)
     tnrInputName = "TnrIn"
     tnrOutName  = "TnrOut"
+    tnrOutName2  = "TnrOutMA"
 
     fourcc = cv2.cv.FOURCC('M','J','P','G')
     videoW = cv2.VideoWriter(tnrInputName + ".avi",fourcc,1.0,(width,height),True)
     videoWR = cv2.VideoWriter(tnrOutName +".avi",fourcc,1.0,(width,height),True)
-    for i in xrange(frames):
+    videoWRMA = cv2.VideoWriter(tnrOutName +"ma.avi",fourcc,1.0,(width,height),True)
+    quality = np.zeros(frames,np.float)
+    quality2 = np.zeros(frames,np.float)
+    for i in xrange(frames):      
         print i
         rgbIn = test.read2DImageFromSequence()
         noisy_rgb = copy.deepcopy(rgbIn)    
@@ -644,19 +675,41 @@ if __name__ == "__main__":
         #cv2.imwrite("frame"+str(i)+".png",noisy_rgb)
         videoW.write(noisy_rgb)
         if i == 0 :
-            imgOut = test.spatialFilterFrame(noisy_rgb,2)
+            imgOut = test.spatialFilterFrame(noisy_rgb,0)
         else:
             imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i) 
         
         imgPrev = copy.deepcopy(imgOut)
         videoWR.write(imgOut)
         #cv2.imwrite("tnr_"+str(i)+".png",imgOut)
+    
+        #check quality in Y domain only
+        imgY = cv2.cvtColor(imgOut,cv2.COLOR_BGR2GRAY)
+        imgY2 = cv2.cvtColor(rgbIn,cv2.COLOR_BGR2GRAY)
+        quality[i] = test.QualityCheck(imgY,imgY2) 
+        
+        
+        #run the second MA mode
+        imgOut = test.spatialFilterFrame(noisy_rgb,0)
+        if i > 0 :
+            imgOut = test.temporalFilterMA(imgOut,noisy_rgb,imgPrev2,height,width,3)
+            
+        imgPrev2 = copy.deepcopy(imgOut)
+        videoWRMA.write(imgOut)
+        
+        imgY3 = cv2.cvtColor(imgOut,cv2.COLOR_BGR2GRAY)
+        quality2[i] = test.QualityCheck(imgY2,imgY3)
+        
+    plt.title("Quality PSNR") 
+    plt.ylabel('db')
+    plt.plot(quality,'r+',quality2,'bs')       
     videoW.release()
     videoWR.release()
-    
+    videoWRMA.release()
     #convert to YUV with FFMPEG to compare them at the same time(yuvplayer)
     test.avi2YUV(tnrInputName,frames)
     test.avi2YUV(tnrOutName,frames)
+    test.avi2YUV(tnrOutName2,frames)
     
     del(test)       
     
