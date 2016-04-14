@@ -186,7 +186,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 40
+        level = 20
         gray = 255
         zu = []
         zv = []
@@ -204,18 +204,19 @@ class Adas_base :
                 img[i,j+1,1] = np.clip(int(img[i,j+1,1] + z2),0,gray)
                 img[i,j,2] = np.clip(int(img[i,j,2] + z1),0,gray)
                 img[i,j+1,2] = np.clip(int(img[i,j+1,2] + z2),0,gray)
-            
-       # pl.subplot(211)
-       # pl.hist(zu+zv,bins=200,normed=True)
-       # pl.subplot(212)
-       # pl.psd(zu+zv)
-       # pl.show()
+        """       
+        plt.subplot(211)
+        plt.hist(zu+zv,bins=200,normed=True)
+        plt.subplot(212)
+        plt.psd(zu+zv)
+        plt.show()
+        """
         return img
         
     """Add LPF for white Gaussian Noise before adding to original img for real isp processing"""    
     def GaussianWhiteNoiseForRGB2(self,imgIn,width,height):
         noiseImg = np.zeros([height,width])
-        level = 50
+        level = 10
         for i in xrange(0,height):
             for j in xrange(0,width,2):
                 r1 = np.random.random_sample()
@@ -577,7 +578,7 @@ if __name__ == "__main__":
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 4
+    frames = 8
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -711,7 +712,7 @@ if __name__ == "__main__":
         
     plt.title("Quality PSNR") 
     plt.ylabel('db')
-    plt.plot(quality,'rs',quality2,'bs')       
+    plt.plot(quality,'rs-',quality2,'bs-')       
     videoW.release()
     videoWR.release()
     videoWRMA.release()
