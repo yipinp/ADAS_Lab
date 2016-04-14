@@ -477,18 +477,15 @@ class Adas_base :
         imgInSpatial = self.spatialFilterFrame(imgIn,2)
         candiateNum = 18
         sad_candidate = np.zeros(candiateNum,np.uint32)
-        distance_candidate = np.zeros(candiateNum,np.uint32)
-        distance_weight = np.zeros(candiateNum,np.float)      
+        distance_candidate = np.zeros(candiateNum,np.float64)
+        distance_weight = np.zeros(candiateNum,np.float64)      
         offset = [(0,0),(0,-1),(0,1),(-1,0),(-1,-1),(-1,1),(1,0),(1,-1),(1,1)]
         #R,G,B with equal weight
         weight_sad = (1/3.0,1/3.0,1/3.0)
-        #Gaussian variance
-        variance = 1.0 
+        #Gaussian variance, control the decay rate to reduce the average strength
+        variance = 1.0
+        stddev_img = np.zeros([height,width],np.uint8)
         
-        #debug weight map
-        
-        
-
         #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
         for j in xrange(height):
              for i in xrange(width): 
@@ -496,7 +493,7 @@ class Adas_base :
                  total_weight = 0.0
                  if (j > 1 and j < height - 2) and (i > 1 and i < width - 2):
                      #idx 0-8  for prev picture, 9-17 for intra picture                
-                     for idx in xrange(18):
+                     for idx in xrange(1,18):
                          offsety,offsetx = offset[idx%9]
                          distance_candidate[idx] = 0.0
                          sad_candidate[idx] = 0.0
@@ -508,32 +505,49 @@ class Adas_base :
                              sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
                              distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
                          total_distance += distance_candidate[idx]
+                     #set index = 0 distance
+                     distance_candidate[0] = np.min(distance_candidate[1:18])/4.0
+                     total_distance += distance_candidate[0]
+                     
                          
-        
-                     total_distance /= candiateNum
-                 
                      #set adaptive sadThres/Variance
                      sad_thres = np.median(sad_candidate)
-     
-      
-                     #check sad threshold to select the reasonable candidate position and do NLM blending
                      
+                     stddev = 0.0
+                     #calculate std dev for current pixel block to check the possible edge
+                     for c in xrange(3):
+                         stddev += np.std(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]   
+                    
+                     if stddev <0.1*imgInSpatial[j,i,0]:
+                         variance = 1.0
+                     elif stddev < 0.3* imgInSpatial[j,i,0]:
+                         variance = 0.7
+                     elif stddev < 0.5* imgInSpatial[j,i,0]:
+                         variance = 0.5
+                     else:
+                         variance = 0.1
+                    
+                     stddev_img[j,i] = int(stddev)
+                     
+                                             
+                     #check sad threshold to select the reasonable candidate position and do NLM blending                    
                      for idx in xrange(18):
                          distance_weight[idx] = 0.0
+                         distance_candidate[idx]/=total_distance
                          #print j,i,idx,sad_candidate[idx],total_distance,distance_candidate[idx]
                          if sad_candidate[idx] > sad_thres:
                              distance_weight[idx] = 0.0
                          else:
                              #Gaussian weight based on euclidean distance                
-                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance*(variance**2)))                       
-                             total_weight += distance_weight[idx]
-                             #print j,i,idx,distance_weight[idx],total_distance,distance_candidate[idx]
+                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(variance**2))                       
+                         total_weight += distance_weight[idx]
+                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],total_weight,total_distance
                     
                          
                      #normalization weight
                      for idx in xrange(18):
                          distance_weight[idx] /= total_weight                                                   
-                        # print j,i,idx,distance_weight[idx]
+                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],total_weight
                          
                 
                      for c in xrange(3):
@@ -554,7 +568,8 @@ class Adas_base :
                  else :
                      for c in xrange(3):
                          imgOut[j,i,c] = imgInSpatial[j,i,c]                    
-                     
+        #cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
+        cv2.imwrite("tnr3d"+str(frame)+".png",imgOut)           
         return imgOut
         
         
@@ -582,7 +597,7 @@ if __name__ == "__main__":
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 20
+    frames = 4
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
