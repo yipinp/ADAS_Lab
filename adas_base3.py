@@ -310,14 +310,14 @@ class Adas_base :
                 self.setAlpha(sad,alpha,i,j,isBoundary,channel)
 
        
-    def alphaBlending(self,imageIn,imagePrev,alpha,j,i,channel,imageOut):
+    def alphaBlending(self,imageIn,imagePrev,alpha,j,i,channel,imageOut):       
          imageOut[i,j,channel] =  (alpha[i,j,channel]*imagePrev[i,j,channel]+(1024-alpha[i,j,channel])*imageIn[i,j,channel])>>10
-        
+         
         
     def betaBlending(self,imageSpatial,temporalFilter,j,i,channel,alpha,image3DOut):
         beta = 1024 - alpha[i,j,channel]
         beta = min(beta,400)
-        image3DOut[i,j,channel] = (beta*imageSpatial[i,j,channel] + (1024-beta)*imageSpatial[i,j,channel]) >> 10
+        image3DOut[i,j,channel] = (beta*imageSpatial[i,j,channel] + (1024-beta)*temporalFilter[i,j,channel]) >> 10
             
     """ 
        R/G/B or Y/U/V seperate channel processing, motion detection not estimation, alpha blending and beta blending
@@ -326,7 +326,7 @@ class Adas_base :
          alpha=np.zeros([height,width,channel],np.uint32)
          imageTemporal = np.zeros([height,width,channel],np.uint8)
          image3DOut = np.zeros([height,width,channel],np.uint8)
-         ST = 0
+         ST = 1
          for k in range(channel):       
              self.getAlphaFromSAD(imageSpatial,imagePrev,height,width,k,alpha)
              
@@ -485,6 +485,9 @@ class Adas_base :
         #Gaussian variance
         variance = 1.0 
         
+        #debug weight map
+        
+        
 
         #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
         for j in xrange(height):
@@ -509,8 +512,9 @@ class Adas_base :
         
                      total_distance /= candiateNum
                  
-                     #set adaptive sadThres
-                     sad_thres = np.median(sad_candidate)*0.3
+                     #set adaptive sadThres/Variance
+                     sad_thres = np.median(sad_candidate)
+     
       
                      #check sad threshold to select the reasonable candidate position and do NLM blending
                      
@@ -521,15 +525,15 @@ class Adas_base :
                              distance_weight[idx] = 0.0
                          else:
                              #Gaussian weight based on euclidean distance                
-                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance*(variance**2)))
+                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(total_distance*(variance**2)))                       
                              total_weight += distance_weight[idx]
                              #print j,i,idx,distance_weight[idx],total_distance,distance_candidate[idx]
                     
                          
                      #normalization weight
                      for idx in xrange(18):
-                         distance_weight[idx] /= total_weight
-                         #print j,i,idx,distance_weight[idx]
+                         distance_weight[idx] /= total_weight                                                   
+                        # print j,i,idx,distance_weight[idx]
                          
                 
                      for c in xrange(3):
@@ -571,14 +575,14 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    filename = r"\mobile_qcif.yuv"
-    #filename = r"\coastguard_cif.yuv"
+    #filename = r"\mobile_qcif.yuv"
+    filename = r"\coastguard_qcif.yuv"
     inputImage = os.getcwd() + filename
     width =  176
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 8
+    frames = 20
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -677,11 +681,13 @@ if __name__ == "__main__":
     videoWRMA = cv2.VideoWriter(tnrOutName +"ma.avi",fourcc,1.0,(width,height),True)
     quality = np.zeros(frames,np.float)
     quality2 = np.zeros(frames,np.float)
+    quality3 = np.zeros(frames,np.float)
     for i in xrange(frames):      
         print i
         rgbIn = test.read2DImageFromSequence()
+        imgY = cv2.cvtColor(rgbIn,cv2.COLOR_BGR2GRAY)
         noisy_rgb = copy.deepcopy(rgbIn)    
-        noisy_rgb = test.GaussianWhiteNoiseForRGB(rgbIn,width,height)
+        noisy_rgb = test.GaussianWhiteNoiseForRGB(noisy_rgb,width,height)
         #cv2.imwrite("frame"+str(i)+".png",noisy_rgb)
         videoW.write(noisy_rgb)
         if i == 0 :
@@ -694,9 +700,8 @@ if __name__ == "__main__":
         #cv2.imwrite("tnr_"+str(i)+".png",imgOut)
     
         #check quality in Y domain only
-        imgY = cv2.cvtColor(imgOut,cv2.COLOR_BGR2GRAY)
-        imgY2 = cv2.cvtColor(rgbIn,cv2.COLOR_BGR2GRAY)
-        quality[i] = test.QualityCheck(imgY,imgY2) 
+        imgY2 = cv2.cvtColor(imgOut,cv2.COLOR_BGR2GRAY)
+        quality[i] = test.QualityCheck(imgY2,imgY) 
         
         
         #run the second MA mode
@@ -708,11 +713,16 @@ if __name__ == "__main__":
         videoWRMA.write(imgOut)
         
         imgY3 = cv2.cvtColor(imgOut,cv2.COLOR_BGR2GRAY)
-        quality2[i] = test.QualityCheck(imgY3,imgY2)
+        quality2[i] = test.QualityCheck(imgY3,imgY)
+        
+        imgY4 = cv2.cvtColor(noisy_rgb,cv2.COLOR_BGR2GRAY)
+        quality3[i] = test.QualityCheck(imgY4,imgY)
         
     plt.title("Quality PSNR") 
     plt.ylabel('db')
-    plt.plot(quality,'rs-',quality2,'bs-')       
+    #plt.plot(quality,'rs-',label="3DNR")
+    #plt.plot(quality2,'bs-',label='1DTNR')
+    plt.plot(quality,'rs-',quality2,'bs-',quality3,'gs-')       
     videoW.release()
     videoWR.release()
     videoWRMA.release()
