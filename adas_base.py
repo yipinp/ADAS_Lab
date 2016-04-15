@@ -544,7 +544,7 @@ class Adas_base :
                      stddev_img[j,i] = int(stddev)     
 
                      #normalization and set 
-                     svariance = mean * (variance**2)
+                     svariance = 1.0*mean * (variance**2)
                                                              
                      #set gaussian weight based on Euclidean distance                   
                      for idx in xrange(18):
@@ -564,7 +564,7 @@ class Adas_base :
                      #normalization weight to 0~1
                      for idx in xrange(18):
                          distance_weight[idx] /= total_weight                                                   
-                        # print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
+                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
                          
                 
                      #calculate the final output based on weight averge filter
@@ -608,15 +608,15 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    #filename = r"\mobile_qcif.yuv"
+    filename = r"\mobile_qcif.yuv"
     #filename = r"\coastguard_qcif.yuv"
-    filename = r"\coastguard_cif.yuv"    
+    #filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
-    width =  352 #176
-    height = 288 #144
+    width =  176 #352 #176
+    height = 144 #144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 50
+    frames = 20
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -757,7 +757,7 @@ if __name__ == "__main__":
     #plt.plot(quality,'rs-',label="3DNR")
     #plt.plot(quality2,'bs-',label='1DTNR')
     pltt.plot(quality,'rs-',label="3DNR")
-    pltt.plot(quality2,'bs--',label="1DNR")
+    pltt.plot(quality2,'bs--',label="VICNR")
     pltt.plot(quality3,'gs-',label="WGN")
     pltt.legend(loc='center left',bbox_to_anchor=(1,0.5),shadow=True)       
     videoW.release()
