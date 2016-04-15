@@ -187,7 +187,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 40
+        level = 20
         gray = 255
         zu = []
         zv = []
@@ -515,7 +515,8 @@ class Adas_base :
                          distance_candidate[idx] /= size
                          total_distance += distance_candidate[idx]
 
-                     distance_avg = np.mean(distance_candidate[0:18])                     
+                     distance_avg = np.mean(distance_candidate[0:18]) 
+                     distance_stddev = np.std(distance_candidate[1:18])
                          
                          
                      #set adaptive sadThres/Variance, only SAD can decide it is moving or not moving region.
@@ -542,6 +543,8 @@ class Adas_base :
                          variance = 0.3                   
                      stddev_img[j,i] = int(stddev)     
 
+                     #normalization and set 
+                     svariance = mean * (variance**2)
                                                              
                      #set gaussian weight based on Euclidean distance                   
                      for idx in xrange(18):
@@ -552,14 +555,16 @@ class Adas_base :
                              distance_weight[idx] = 0.0
                          else:
                              #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(distance_avg*(variance**2)))  
+                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/svariance)  
+                             #print idx,distance_avg,distance_candidate[idx],distance_weight[idx],distance_stddev
+                             #print j,i,idx,distance_weight[idx],distance_candidate[idx],mean,variance
                          total_weight += distance_weight[idx]
-                         #print j,i,idx,distance_weight[idx],total_weight,distance_candidate[idx],distance_avg,variance
+                         #print j,i,idx,distance_weight[idx],total_weight,distance_candidate[idx],mean,variance
                                               
                      #normalization weight to 0~1
                      for idx in xrange(18):
                          distance_weight[idx] /= total_weight                                                   
-                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
+                        # print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
                          
                 
                      #calculate the final output based on weight averge filter
@@ -581,7 +586,7 @@ class Adas_base :
                  else :
                      for c in xrange(3):
                          imgOut[j,i,c] = imgInSpatial[j,i,c]                    
-        cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
+        #cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
         #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut)           
         return imgOut
         
@@ -603,14 +608,15 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    filename = r"\mobile_qcif.yuv"
+    #filename = r"\mobile_qcif.yuv"
     #filename = r"\coastguard_qcif.yuv"
+    filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
-    width =  176
-    height = 144
+    width =  352 #176
+    height = 288 #144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 10
+    frames = 50
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -753,7 +759,7 @@ if __name__ == "__main__":
     pltt.plot(quality,'rs-',label="I3DNR")
     pltt.plot(quality2,'bs--',label="V1DNR")
     pltt.plot(quality3,'gs-',label="WGN")
-    pltt.legend(loc='upper center',shadow=True)       
+    pltt.legend(loc='center left',bbox_to_anchor=(1,0.5),shadow=True)       
     videoW.release()
     videoWR.release()
     videoWRMA.release()
