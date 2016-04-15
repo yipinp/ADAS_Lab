@@ -13,6 +13,7 @@ import random
 import copy
 import pylab as plt
 from scipy import fftpack
+import matplotlib.pyplot as pltt
 import math
 
 class Adas_base :
@@ -186,7 +187,7 @@ class Adas_base :
     """ box-muller"""
     def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
         img = imgIn
-        level = 20
+        level = 40
         gray = 255
         zu = []
         zv = []
@@ -403,7 +404,12 @@ class Adas_base :
                  #call sigmod function for 0-1 normalization
                  beta = 1.0/np.exp(1.0/activity)
                  beta_map[j,i] = beta 
-       
+    
+    def sigmoid(self,x):
+        return 1.0/(1+np.exp(-x))
+    
+    
+    
     """
         R/G/B,Y/U/V procecss together, not seperate channel for parameters, with simplied optical flow and motion detection
         alpha and beta blending
@@ -476,23 +482,26 @@ class Adas_base :
         imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
         imgInSpatial = self.spatialFilterFrame(imgIn,2)
         candiateNum = 18
+        size = 9.0
         sad_candidate = np.zeros(candiateNum,np.uint32)
         distance_candidate = np.zeros(candiateNum,np.float64)
         distance_weight = np.zeros(candiateNum,np.float64)      
         offset = [(0,0),(0,-1),(0,1),(-1,0),(-1,-1),(-1,1),(1,0),(1,-1),(1,1)]
         #R,G,B with equal weight
         weight_sad = (1/3.0,1/3.0,1/3.0)
-        #Gaussian variance
-        variance = 0.5
+        #Gaussian variance, control the decay rate to reduce the average strength
+        variance = 1.0
+        stddev_img = np.zeros([height,width],np.uint8)
         
         #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
+        #SAD for moving region checking, activity=stddev/mean for edge region checking
         for j in xrange(height):
              for i in xrange(width): 
                  total_distance = 0.0
                  total_weight = 0.0
                  if (j > 1 and j < height - 2) and (i > 1 and i < width - 2):
                      #idx 0-8  for prev picture, 9-17 for intra picture                
-                     for idx in xrange(1,18):
+                     for idx in xrange(0,18):
                          offsety,offsetx = offset[idx%9]
                          distance_candidate[idx] = 0.0
                          sad_candidate[idx] = 0.0
@@ -503,36 +512,57 @@ class Adas_base :
                          for c in xrange(3):
                              sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
                              distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
+                         distance_candidate[idx] /= size
                          total_distance += distance_candidate[idx]
-                     #set index = 0 distance
-                     distance_candidate[0] = np.min(distance_candidate[1:18])/4.0
-                     total_distance += distance_candidate[0]
-                     
+
+                     distance_avg = np.mean(distance_candidate[0:18])                     
                          
-                     #set adaptive sadThres/Variance
-                     sad_thres = np.median(sad_candidate)
-                                             
-                     #check sad threshold to select the reasonable candidate position and do NLM blending                    
+                         
+                     #set adaptive sadThres/Variance, only SAD can decide it is moving or not moving region.
+                     #if it is moving region, don't blending the previous frame for ghost reduction
+                     # median filter to remove high SAD candidates
+                     sad_thres = np.median(sad_candidate)                    
+                     stddev = 0.0
+                     mean = 0.0    
+                     
+                     #calculate std dev for current pixel block to decide it is edge region or flat region
+                     #if edge region, need to keep edge, reduce the filter strenght by gaussian variance setting
+                     for c in xrange(3):
+                         stddev += np.std(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]  
+                         mean  += np.mean(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]
+                         
+                     #linear segment
+                     if stddev/mean <0.1:
+                         variance = 1.0
+                     elif stddev/mean < 0.3:
+                         variance = 0.7
+                     elif stddev/mean < 0.5:
+                         variance = 0.5
+                     else:
+                         variance = 0.3                   
+                     stddev_img[j,i] = int(stddev)     
+
+                                                             
+                     #set gaussian weight based on Euclidean distance                   
                      for idx in xrange(18):
                          distance_weight[idx] = 0.0
-                         print distance_candidate[idx]
-                         distance_candidate[idx]/=total_distance
                          #print j,i,idx,sad_candidate[idx],total_distance,distance_candidate[idx]
+                         #if moving region, remove the moving outlier candidates for ghost reduction
                          if sad_candidate[idx] > sad_thres:
                              distance_weight[idx] = 0.0
                          else:
-                             #Gaussian weight based on euclidean distance                
-                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(variance**2))                       
+                             #Gaussian weight based on euclidean distance , distance_avg for normalization               
+                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/(distance_avg*(variance**2)))  
                          total_weight += distance_weight[idx]
-                         print j,i,idx,distance_weight[idx],distance_candidate[idx],total_weight,total_distance
-                    
-                         
-                     #normalization weight
+                         #print j,i,idx,distance_weight[idx],total_weight,distance_candidate[idx],distance_avg,variance
+                                              
+                     #normalization weight to 0~1
                      for idx in xrange(18):
                          distance_weight[idx] /= total_weight                                                   
-                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],total_weight
+                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
                          
                 
+                     #calculate the final output based on weight averge filter
                      for c in xrange(3):
                          pixel_v = 0.0
                          for idx in xrange(18):
@@ -551,7 +581,8 @@ class Adas_base :
                  else :
                      for c in xrange(3):
                          imgOut[j,i,c] = imgInSpatial[j,i,c]                    
-                     
+        cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
+        #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut)           
         return imgOut
         
         
@@ -572,14 +603,14 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    #filename = r"\mobile_qcif.yuv"
-    filename = r"\coastguard_qcif.yuv"
+    filename = r"\mobile_qcif.yuv"
+    #filename = r"\coastguard_qcif.yuv"
     inputImage = os.getcwd() + filename
     width =  176
     height = 144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 4
+    frames = 10
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -715,11 +746,14 @@ if __name__ == "__main__":
         imgY4 = cv2.cvtColor(noisy_rgb,cv2.COLOR_BGR2GRAY)
         quality3[i] = test.QualityCheck(imgY4,imgY)
         
-    plt.title("Quality PSNR") 
-    plt.ylabel('db')
+    pltt.title("Quality PSNR") 
+    pltt.ylabel('db')
     #plt.plot(quality,'rs-',label="3DNR")
     #plt.plot(quality2,'bs-',label='1DTNR')
-    plt.plot(quality,'rs-',quality2,'bs-',quality3,'gs-')       
+    pltt.plot(quality,'rs-',label="I3DNR")
+    pltt.plot(quality2,'bs--',label="V1DNR")
+    pltt.plot(quality3,'gs-',label="WGN")
+    pltt.legend(loc='upper center',shadow=True)       
     videoW.release()
     videoWR.release()
     videoWRMA.release()
