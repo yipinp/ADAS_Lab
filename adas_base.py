@@ -185,9 +185,8 @@ class Adas_base :
         return imgRGB  
 
     """ box-muller"""
-    def GaussianWhiteNoiseForRGB(self,imgIn,width,height):
+    def GaussianWhiteNoiseForRGB(self,imgIn,width,height,mean = 0,sigma = 40):
         img = imgIn
-        level = 20
         gray = 255
         zu = []
         zv = []
@@ -195,8 +194,8 @@ class Adas_base :
             for j in xrange(0,width,2):
                 r1 = np.random.random_sample()
                 r2 = np.random.random_sample()
-                z1 = level*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
-                z2 = level*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                z1 = mean + sigma*np.cos(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
+                z2 = mean + sigma*np.sin(2*np.pi*r2)*np.sqrt((-2)*np.log(r1))
                 zu.append(z1)
                 zv.append(z2)
                 img[i,j,0] = np.clip(int(img[i,j,0] + z1),0,gray)
@@ -266,21 +265,24 @@ class Adas_base :
     
     def SAD_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,offsetx = 0,offsety = 0,size=3):
          if isPictureBoundary:
-             sad = np.abs(np.subtract(array0[y_center,x_center,component] , array1[y_center+offsety,x_center+offsetx,component],dtype=np.int32))
+             sad = np.abs(np.subtract(array0[y_center,x_center,component] , array1[y_center,x_center,component],dtype=np.int32))
          else:
              sad = np.sum(
                      np.abs(
                          np.subtract(array0[y_center-size/2:y_center+size/2+1 ,x_center-size/2:x_center+size/2+1,component] 
-                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),dtype=np.int32))  
+                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),dtype=np.int32)) 
          return sad
          
     #Euclidean distancec     
     def Euc_distance_block(self,array0,array1,x_center,y_center,isPictureBoundary,component,offsetx = 0,offsety = 0,size=3):
-        distance = np.sqrt(
-                    np.sum(
+        if isPictureBoundary :
+            distance = np.power(np.subtract(array0[y_center,x_center,component] , array1[y_center,x_center,component],dtype=np.int32),2,dtype=np.int32)
+        else:
+            distance = np.sum(
                      np.power(
                          np.subtract(array0[y_center-size/2:y_center+size/2+1 ,x_center-size/2:x_center+size/2+1,component] 
-                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),2,dtype=np.int32)))  
+                             ,array1[y_center-size/2 + offsety:y_center+size/2+1+offsety ,x_center-size/2+offsetx:x_center+size/2+1+offsetx,component],dtype=np.int32),2,dtype=np.int32))/(size*size)
+                             
         return distance
                              
     def setAlpha(self,sad,alpha,i,j,isBoundary,channel,light=1,ST=0,iir = 768):
@@ -323,11 +325,10 @@ class Adas_base :
     """ 
        R/G/B or Y/U/V seperate channel processing, motion detection not estimation, alpha blending and beta blending
     """
-    def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel):
+    def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel,ST = 0):
          alpha=np.zeros([height,width,channel],np.uint32)
          imageTemporal = np.zeros([height,width,channel],np.uint8)
          image3DOut = np.zeros([height,width,channel],np.uint8)
-         ST = 1
          for k in range(channel):       
              self.getAlphaFromSAD(imageSpatial,imagePrev,height,width,k,alpha)
              
@@ -408,7 +409,126 @@ class Adas_base :
     def sigmoid(self,x):
         return 1.0/(1+np.exp(-x))
     
+    def tap_calc(self,j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary):
+        #stat
+        stddev = 0.0
+        mean = 0.0                         
+        #calculate std dev for current pixel block to decide it is edge region or flat region
+        #if edge region, need to keep edge, reduce the filter strenght by gaussian variance setting
+        for c in xrange(3):
+            stddev += np.std(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]  
+            mean  += np.mean(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]
+        if isPictureBoundary:
+            stddev = 1.0
+            mean = np.mean(imgInSpatial[j,i,0:3])
+        #smoothing    
+        if mean <= 0 :
+            mean = 1.0
+                        
+        ratio = stddev/mean
+        
+        if (ratio < 0.1):
+            ratio = 0.1
+        
+        x_line_segment =(0.1,0.7,1.0)
+        y_line_segment =(3,18,3)
+        minTap = 1
+        
+        # 3 linear 
+        # 0- 0.1 : 1-3 taps
+        if ratio <= x_line_segment[0]:
+            slope = (y_line_segment[0] -minTap)/x_line_segment[0]
+            tap = int(slope*ratio + minTap)
+            k = 0.20
+        elif ratio <= x_line_segment[1]:
+            slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
+            tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
+            k = 0.35
+        else:
+            slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
+            tap = int(slope*(ratio-x_line_segment[1]) + minTap)
+            k = 0.15
+              
+        
+        stddev_img[j,i] = int(stddev) 
+        return (tap,k)
+        
+
+        
+    def moving_detection(self,sad_candidate):
+         sad_thres = np.median(sad_candidate) 
+         #current-prev
+         moving_idx = 9                                                              
+         #moving or occlusion or scene change detecting
+         moving_detection = 0
+         if sad_candidate[moving_idx] >= sad_thres:
+             moving_detection = 1  
+             
+         return (moving_detection,sad_thres)
     
+    def set_weight(self,sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,stddev_img):
+        #Gaussian variance, control the decay rate to reduce the average strength
+        #set adaptive sadThres/Variance, only SAD can decide it is moving or not moving region.
+        #if it is moving region, don't blending the previous frame for ghost reduction
+        # median filter to remove high SAD candidates                                                      
+        #moving or occlusion or scene change detecting
+        moving_detection,sad_thres = self.moving_detection(sad_candidate)
+        
+        #set activity for current pixel block
+        tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary)
+        
+        
+        #set weight based on moving and activity, control the filter length
+        """
+        Methodology:
+            (1)There are two deviations: image stddev and noise stddev.
+            when activity < Thres0:
+                The noise and image deviation is small, such as non-noisy picture and no edge.
+                 tap should be small
+            when activity < thres1:
+                No edge but has big noise deviation, tap should be big
+            when activity < thres2:
+                is edge. tap should be small
+        
+            (2) moving checking
+            current_sad - previous_sad to check the moving, when the moving exist, the tap should be small
+        
+        
+            if no moving, noise activity is big, the strongest filter should be used based on distance
+        
+        """
+                        
+         #set gaussian weight based on Euclidean distance                   
+        for idx in xrange(18):
+             distance_weight[idx] = 0.0
+                         
+             #if moving region, remove the moving outlier candidates for ghost reduction
+             if sad_candidate[idx] > sad_thres and moving_detection and not isPictureBoundary:
+                 distance_weight[idx] = 0.0
+             else:
+                 #Gaussian weight based on euclidean distance , distance_avg for normalization               
+                 distance_weight[idx] =np.exp(-np.max(distance_candidate[idx] - 2*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))             
+                 if isPictureBoundary and (idx != 0 and idx!=9):
+                     distance_weight[idx] = 0.0
+                 #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
+                 #print j,i,idx,isPictureBoundary,distance_weight[idx],distance_candidate[idx],noiseVariance,tap
+        order = np.argsort(distance_weight)             
+        
+        #set 0 weight based on tap
+        total_weight = 0.0       
+        for idx in xrange(18):
+            #print idx,tap,order[idx],distance_weight[order[idx]],total_weight,moving_detection,isPictureBoundary,sad_thres,sad_candidate[idx]
+            if idx < 18-tap:
+                distance_weight[order[idx]] = 0.0  
+        
+            total_weight += distance_weight[order[idx]]     
+                                          
+        #normalization weight to 0~1
+        for idx in xrange(18):
+            distance_weight[idx] /= total_weight                                                   
+            #print j,i,idx,distance_weight[idx],distance_candidate[idx],tap,total_weight,k
+                        
+
     
     """
         R/G/B,Y/U/V procecss together, not seperate channel for parameters, with simplied optical flow and motion detection
@@ -478,114 +598,53 @@ class Adas_base :
          return imgOut         
                  
     """NLM for 3d"""
-    def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,sad_thres=780):
+    def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,noiseVariance,sad_thres=780):
         imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
         imgInSpatial = self.spatialFilterFrame(imgIn,2)
         candiateNum = 18
-        size = 9.0
         sad_candidate = np.zeros(candiateNum,np.uint32)
         distance_candidate = np.zeros(candiateNum,np.float64)
         distance_weight = np.zeros(candiateNum,np.float64)      
         offset = [(0,0),(0,-1),(0,1),(-1,0),(-1,-1),(-1,1),(1,0),(1,-1),(1,1)]
         #R,G,B with equal weight
         weight_sad = (1/3.0,1/3.0,1/3.0)
-        #Gaussian variance, control the decay rate to reduce the average strength
-        variance = 1.0
         stddev_img = np.zeros([height,width],np.uint8)
-        
+ 
         #check 3x3 for current frame and prev 3x3 , 18 blocks for SAD
         #SAD for moving region checking, activity=stddev/mean for edge region checking
         for j in xrange(height):
              for i in xrange(width): 
-                 total_distance = 0.0
-                 total_weight = 0.0
-                 if (j > 1 and j < height - 2) and (i > 1 and i < width - 2):
-                     #idx 0-8  for prev picture, 9-17 for intra picture                
-                     for idx in xrange(0,18):
-                         offsety,offsetx = offset[idx%9]
-                         distance_candidate[idx] = 0.0
-                         sad_candidate[idx] = 0.0
-                         if idx > 8 :
-                             imgIn2 = imgPrevSpatial                        
-                         else:
-                             imgIn2 = imgInSpatial
-                         for c in xrange(3):
-                             sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
-                             distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,0,c,offsety,offsetx)*weight_sad[c])
-                         distance_candidate[idx] /= size
-                         total_distance += distance_candidate[idx]
-
-                     distance_avg = np.mean(distance_candidate[0:18]) 
-                     distance_stddev = np.std(distance_candidate[1:18])
-                         
-                         
-                     #set adaptive sadThres/Variance, only SAD can decide it is moving or not moving region.
-                     #if it is moving region, don't blending the previous frame for ghost reduction
-                     # median filter to remove high SAD candidates
-                     sad_thres = np.median(sad_candidate)                    
-                     stddev = 0.0
-                     mean = 0.0    
-                     
-                     #calculate std dev for current pixel block to decide it is edge region or flat region
-                     #if edge region, need to keep edge, reduce the filter strenght by gaussian variance setting
-                     for c in xrange(3):
-                         stddev += np.std(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]  
-                         mean  += np.mean(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]
-                         
-                     #linear segment
-                     if stddev/mean <0.1:
-                         variance = 1.0
-                     elif stddev/mean < 0.3:
-                         variance = 0.7
-                     elif stddev/mean < 0.5:
-                         variance = 0.5
+                 isPictureBoundary = j < 2 or j >=height - 2 or i < 2 or i >= width -2                                            
+                 #idx 0-8  for prev picture, 9-17 for intra picture                
+                 for idx in xrange(18):
+                     offsety,offsetx = offset[idx%9]
+                     distance_candidate[idx] = 0.0
+                     sad_candidate[idx] = 0.0
+                     if idx > 8 :
+                         imgIn2 = imgPrevSpatial                        
                      else:
-                         variance = 0.3                   
-                     stddev_img[j,i] = int(stddev)     
-
-                     #normalization and set 
-                     svariance = 1.0*mean * (variance**2)
-                                                             
-                     #set gaussian weight based on Euclidean distance                   
+                         imgIn2 = imgInSpatial
+                     for c in xrange(3):
+                         #set current pixel distance as small value
+                         sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
+                         distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
+                 #print idx,sad_candidate[idx],distance_candidate[idx]
+                 self.set_weight(sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,stddev_img)                    
+                                                            
+                 #calculate the final output based on weight averge filter
+                 for c in xrange(3):
+                     pixel_v = 0.0
                      for idx in xrange(18):
-                         distance_weight[idx] = 0.0
-                         #print j,i,idx,sad_candidate[idx],total_distance,distance_candidate[idx]
-                         #if moving region, remove the moving outlier candidates for ghost reduction
-                         if sad_candidate[idx] > sad_thres:
-                             distance_weight[idx] = 0.0
+                         offsety,offsetx = offset[idx%9]
+                         if idx > 8 :
+                             imgIn2 = imgPrevIn
                          else:
-                             #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                             distance_weight[idx] = np.exp(-1.0*distance_candidate[idx]/svariance)  
-                             #print idx,distance_avg,distance_candidate[idx],distance_weight[idx],distance_stddev
-                             #print j,i,idx,distance_weight[idx],distance_candidate[idx],mean,variance
-                         total_weight += distance_weight[idx]
-                         #print j,i,idx,distance_weight[idx],total_weight,distance_candidate[idx],mean,variance
-                                              
-                     #normalization weight to 0~1
-                     for idx in xrange(18):
-                         distance_weight[idx] /= total_weight                                                   
-                         #print j,i,idx,distance_weight[idx],distance_candidate[idx],variance
-                         
-                
-                     #calculate the final output based on weight averge filter
-                     for c in xrange(3):
-                         pixel_v = 0.0
-                         for idx in xrange(18):
-                             offsety,offsetx = offset[idx%9]
-                             if idx > 8 :
-                                 imgIn2 = imgPrevIn
-                             else:
-                                 imgIn2 = imgIn                                    
-                             pixel_v += distance_weight[idx]*imgIn2[j+offsety,i+offsetx,c]
-                           
-                 
-                             
-                         imgOut[j,i,c] =int(pixel_v)
-                         
-                         
-                 else :
-                     for c in xrange(3):
-                         imgOut[j,i,c] = imgInSpatial[j,i,c]                    
+                            imgIn2 = imgIn 
+                         if j + offsety < height and i + offsetx < width:                                   
+                            pixel_v += distance_weight[idx]*imgIn2[j+offsety,i+offsetx,c]
+                            
+           
+                 imgOut[j,i,c] =int(pixel_v)                    
         #cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
         #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut)           
         return imgOut
@@ -608,15 +667,15 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    filename = r"\mobile_qcif.yuv"
-    #filename = r"\coastguard_qcif.yuv"
+    #filename = r"\mobile_qcif.yuv"
+    filename = r"\coastguard_qcif.yuv"
     #filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
-    width =  176 #352 #176
+    width =  176 #176
     height = 144 #144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 20
+    frames = 10
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -716,18 +775,20 @@ if __name__ == "__main__":
     quality = np.zeros(frames,np.float)
     quality2 = np.zeros(frames,np.float)
     quality3 = np.zeros(frames,np.float)
+    noiseVariance = 20
+    ST = 1
     for i in xrange(frames):      
         print i
         rgbIn = test.read2DImageFromSequence()
         imgY = cv2.cvtColor(rgbIn,cv2.COLOR_BGR2GRAY)
         noisy_rgb = copy.deepcopy(rgbIn)    
-        noisy_rgb = test.GaussianWhiteNoiseForRGB(noisy_rgb,width,height)
+        noisy_rgb = test.GaussianWhiteNoiseForRGB(noisy_rgb,width,height,0,noiseVariance)
         #cv2.imwrite("frame"+str(i)+".png",noisy_rgb)
         videoW.write(noisy_rgb)
         if i == 0 :
             imgOut = test.spatialFilterFrame(noisy_rgb,0)
         else:
-            imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i) 
+            imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i,noiseVariance) 
         
         imgPrev = copy.deepcopy(imgOut)
         videoWR.write(imgOut)
@@ -741,7 +802,7 @@ if __name__ == "__main__":
         #run the second MA mode
         imgOut = test.spatialFilterFrame(noisy_rgb,0)
         if i > 0 :
-            imgOut = test.temporalFilterMA(imgOut,noisy_rgb,imgPrev2,height,width,3)
+            imgOut = test.temporalFilterMA(imgOut,noisy_rgb,imgPrev2,height,width,3,ST)
             
         imgPrev2 = copy.deepcopy(imgOut)
         videoWRMA.write(imgOut)
