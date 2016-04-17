@@ -286,21 +286,8 @@ class Adas_base :
         return distance
                              
     def setAlpha(self,sad,alpha,i,j,isBoundary,channel,light=1,ST=0,iir = 768):
-        if light == 0 :
-            alpha[i,j,channel] = 1024 - min(1024,4.5*sad)
-        elif light == 1 and ST == 0:
-            alpha[i,j,channel] = 1024 - min(1024,4*sad)
-        elif light ==1 and ST ==1:
-            alpha[i,j,channel] = 1024 - min(1024,3.0*sad)
-        else:
-            alpha[i,j,channel] = 1024 - min(1024,2.75*sad)
         
-        #average alpha, top-left,top,top-right,left,current
-        if light > 0 and not(isBoundary):
-            alpha[i,j,channel] =( (alpha[i,j,channel]<<1) + (alpha[i,j-1,channel]<<1) +(alpha[i-1,j,channel]<<1) + alpha[i-1,j-1,channel] +alpha[i-1,j+1,channel])>> 3
-              
-        alpha[i,j,channel] = (iir * alpha[i,j,channel]) >> 10
-        #alpha[i,j,channel] = 512
+        alpha[i,j,channel] = 512
         
         
  
@@ -326,21 +313,7 @@ class Adas_base :
        R/G/B or Y/U/V seperate channel processing, motion detection not estimation, alpha blending and beta blending
     """
     def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel,ST = 0):
-         alpha=np.zeros([height,width,channel],np.uint32)
-         imageTemporal = np.zeros([height,width,channel],np.uint8)
-         image3DOut = np.zeros([height,width,channel],np.uint8)
-         for k in range(channel):       
-             self.getAlphaFromSAD(imageSpatial,imagePrev,height,width,k,alpha)
-             
-         for i in range(height):
-            for j in range(width):
-                for k in range(channel):
-                    self.alphaBlending(imageIn,imagePrev,alpha,j,i,k,imageTemporal)
-                    self.betaBlending(imageSpatial,imageTemporal,j,i,k,alpha,image3DOut)
-         if ST == 0:            
-            image3DOut = imageTemporal
-         #Beta blending
-         return image3DOut
+        return image3DOut
          
          
          
