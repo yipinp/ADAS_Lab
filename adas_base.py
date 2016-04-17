@@ -434,20 +434,29 @@ class Adas_base :
         y_line_segment =(3,18,3)
         minTap = 1
         
+        #set the k1,k2,k3 based on noise variance
+        #k1 for low noise level, k2 for medium, k3 for high
+        # noise     k1      k2      k3
+        # 20        0.20    0.35    0.15
+        # 10        0.05    0.30    0.15
+        k1 = 0.05
+        k2 = 0.20
+        k3 = 0.15
+        
         # 3 linear 
         # 0- 0.1 : 1-3 taps
         if ratio <= x_line_segment[0]:
             slope = (y_line_segment[0] -minTap)/x_line_segment[0]
             tap = int(slope*ratio + minTap)
-            k = 0.20
+            k = k1
         elif ratio <= x_line_segment[1]:
             slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
             tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
-            k = 0.35
+            k = k2
         else:
             slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
             tap = int(slope*(ratio-x_line_segment[1]) + minTap)
-            k = 0.15
+            k = k3
               
         
         stddev_img[j,i] = int(stddev) 
@@ -668,14 +677,15 @@ if __name__ == "__main__":
         
     #YUV420->RGB
     #filename = r"\mobile_qcif.yuv"
-    filename = r"\coastguard_qcif.yuv"
-    #filename = r"\coastguard_cif.yuv"    
+    #filename = r"\coastguard_qcif.yuv"
+    filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
-    width =  176 #176
-    height = 144 #144
+    width = 352#176
+    height =288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 10
+    frames = 20
+    noiseVariance = 10
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -775,7 +785,7 @@ if __name__ == "__main__":
     quality = np.zeros(frames,np.float)
     quality2 = np.zeros(frames,np.float)
     quality3 = np.zeros(frames,np.float)
-    noiseVariance = 20
+    
     ST = 1
     for i in xrange(frames):      
         print i
