@@ -286,8 +286,21 @@ class Adas_base :
         return distance
                              
     def setAlpha(self,sad,alpha,i,j,isBoundary,channel,light=1,ST=0,iir = 768):
+        if light == 0 :
+            alpha[i,j,channel] = 1024 - min(1024,4.5*sad)
+        elif light == 1 and ST == 0:
+            alpha[i,j,channel] = 1024 - min(1024,4*sad)
+        elif light ==1 and ST ==1:
+            alpha[i,j,channel] = 1024 - min(1024,3.0*sad)
+        else:
+            alpha[i,j,channel] = 1024 - min(1024,2.75*sad)
         
-        alpha[i,j,channel] = 512
+        #average alpha, top-left,top,top-right,left,current
+        if light > 0 and not(isBoundary):
+            alpha[i,j,channel] =( (alpha[i,j,channel]<<1) + (alpha[i,j-1,channel]<<1) +(alpha[i-1,j,channel]<<1) + alpha[i-1,j-1,channel] +alpha[i-1,j+1,channel])>> 3
+              
+        alpha[i,j,channel] = (iir * alpha[i,j,channel]) >> 10
+        #alpha[i,j,channel] = 512
         
         
  
@@ -313,7 +326,21 @@ class Adas_base :
        R/G/B or Y/U/V seperate channel processing, motion detection not estimation, alpha blending and beta blending
     """
     def temporalFilterMA(self,imageSpatial,imageIn,imagePrev,height,width,channel,ST = 0):
-        return image3DOut
+         alpha=np.zeros([height,width,channel],np.uint32)
+         imageTemporal = np.zeros([height,width,channel],np.uint8)
+         image3DOut = np.zeros([height,width,channel],np.uint8)
+         for k in range(channel):       
+             self.getAlphaFromSAD(imageSpatial,imagePrev,height,width,k,alpha)
+             
+         for i in range(height):
+            for j in range(width):
+                for k in range(channel):
+                    self.alphaBlending(imageIn,imagePrev,alpha,j,i,k,imageTemporal)
+                    self.betaBlending(imageSpatial,imageTemporal,j,i,k,alpha,image3DOut)
+         if ST == 0:            
+            image3DOut = imageTemporal
+         #Beta blending
+         return image3DOut
          
          
          
@@ -410,10 +437,11 @@ class Adas_base :
         #set the k1,k2,k3 based on noise variance
         #k1 for low noise level, k2 for medium, k3 for high
         # noise     k1      k2      k3
-        # 20        0.20    0.35    0.15
-        # 10        0.05    0.30    0.15
-        k1 = 0.05
-        k2 = 0.20
+        # 10        0.10    0.20    0.15
+        # 20        0.20    0.35    0.15       
+        # 30        0.20    0.55    0.15
+        k1 = 0.10
+        k2 = 0.55
         k3 = 0.15
         
         # 3 linear 
@@ -459,6 +487,7 @@ class Adas_base :
         #set activity for current pixel block
         tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary)
         
+        s = 2.0
         
         #set weight based on moving and activity, control the filter length
         """
@@ -489,7 +518,7 @@ class Adas_base :
                  distance_weight[idx] = 0.0
              else:
                  #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                 distance_weight[idx] =np.exp(-np.max(distance_candidate[idx] - 2*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))             
+                 distance_weight[idx] =np.exp(-np.max(distance_candidate[idx] - s*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))             
                  if isPictureBoundary and (idx != 0 and idx!=9):
                      distance_weight[idx] = 0.0
                  #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
@@ -635,7 +664,7 @@ class Adas_base :
     """Quality checking"""
     def QualityCheck(self,img1,img2,mode = 'PSNR'):
         if mode == 'PSNR':
-            mse = np.mean((img1-img2)**2)
+            mse = np.mean((img1.astype("int")-img2.astype("int"))**2)
             if mse == 0:
                 return 100
             PIXEL_MAX = 255.0
@@ -649,16 +678,17 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    #filename = r"\mobile_qcif.yuv"
+    filename = r"\mobile_qcif.yuv"
     #filename = r"\coastguard_qcif.yuv"
-    filename = r"\coastguard_cif.yuv"    
+    #filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
-    width = 352#176
-    height =288#144
+    width = 176#352#176
+    height =144#288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 20
-    noiseVariance = 10
+    frames = 10
+    noiseVariance = 30
+    ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
     rgb = test.read2DImageFromSequence()
@@ -759,7 +789,7 @@ if __name__ == "__main__":
     quality2 = np.zeros(frames,np.float)
     quality3 = np.zeros(frames,np.float)
     
-    ST = 1
+    
     for i in xrange(frames):      
         print i
         rgbIn = test.read2DImageFromSequence()
