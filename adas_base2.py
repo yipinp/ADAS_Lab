@@ -427,25 +427,27 @@ class Adas_base :
                         
         ratio = stddev/mean
         
-        if (ratio < 0.1):
-            ratio = 0.1
-        
+                
         x_line_segment =(0.1,0.8,1.0)
-        y_line_segment =(3,candiateNum,3)
+        y_line_segment =(4,candiateNum,4)
         minTap = 1
+        if (ratio <= 0):
+            ratio = x_line_segment[0]
         
         #set the k1,k2,k3 based on noise variance
         #k1 for low noise level, k2 for medium, k3 for high
-        # noise     k1      k2      k3
-        # <20      0.05    0.10    0.05
-        # 30       0.15    0.45    0.20       
-        # >30      0.15    1.0     0.20
+        # noise     k1      k2      k3        x_line            y_line
+        #  5       0.1     0.1     0.1      (0.2,0.8,1.0)    (9,18,4)
+        # 15       0.25    0.35    0.20    
+        # 30       0.15    0.45    0.20     (0.1,0.8,1.0)    (3,18,3)  
+        # >30      0.15    1.0     0.20     (0.1,0.8,1.0)    (3,18,3)
         k1 = 0.15
-        k2 = 0.45
-        k3 = 0.20
+        k2 = 1.0
+        k3 = 0.2
         
         # 3 linear
         # 0- 0.1 : 1-3 taps
+        
         if ratio <= x_line_segment[0]:
             slope = (y_line_segment[0] -minTap)/x_line_segment[0]
             tap = int(slope*ratio + minTap)
@@ -684,16 +686,16 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    filename = r"\mobile_qcif.yuv"
-    #filename = r"\coastguard_qcif.yuv"
+    #filename = r"\mobile_qcif.yuv"
+    filename = r"\coastguard_qcif.yuv"
     #filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
     width = 176#352#176
     height =144#288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 4
-    noiseVariance = 20
+    frames = 3
+    noiseVariance = 40
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
