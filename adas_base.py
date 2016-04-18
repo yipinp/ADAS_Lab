@@ -438,8 +438,8 @@ class Adas_base :
         #k1 for low noise level, k2 for medium, k3 for high
         # noise     k1      k2      k3
         # 10        0.10    0.20    0.15
-        # 20        0.20    0.35    0.15       
-        # 30        0.20    0.55    0.15
+        # 20        0.10    0.35    0.15       
+        # >=30      0.10    0.55    0.15
         k1 = 0.10
         k2 = 0.55
         k3 = 0.15
