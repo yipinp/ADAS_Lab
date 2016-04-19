@@ -4,17 +4,20 @@ Created on Wed Mar 25 10:58:24 2016
 
 @author: yipinp
 """
-
+#encoding=utf-8
 import cv2
 import numpy as np
 import os
-from PIL import Image
+#from PIL import Image
 import random
 import copy
 import pylab as plt
-from scipy import fftpack
+#from scipy import fftpack
 import matplotlib.pyplot as pltt
 import math
+
+
+
 
 class Adas_base :
     def __init__(self,filename,width=0,height=0,inputType="YUV420",outputType = "RGB"):    
@@ -409,7 +412,7 @@ class Adas_base :
     def sigmoid(self,x):
         return 1.0/(1+np.exp(-x))
     
-    def tap_calc(self,j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,candiateNum=18):
+    def tap_calc(self,j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,weight_map,candiateNum=18):
         #stat
         stddev = 0.0
         mean = 0.0                         
@@ -427,9 +430,10 @@ class Adas_base :
                         
         ratio = stddev/mean
         
-                
-        x_line_segment =(0.1,0.8,1.0)
-        y_line_segment =(4,candiateNum,4)
+
+    
+        x_line_segment =(0.2,0.8,1.0)
+        y_line_segment =(9,candiateNum,9)
         minTap = 1
         if (ratio <= 0):
             ratio = x_line_segment[0]
@@ -441,9 +445,9 @@ class Adas_base :
         # 15       0.25    0.35    0.20    
         # 30       0.15    0.45    0.20     (0.1,0.8,1.0)    (3,18,3)  
         # >30      0.15    1.0     0.20     (0.1,0.8,1.0)    (3,18,3)
-        k1 = 0.15
+        k1 = 0.55
         k2 = 1.0
-        k3 = 0.2
+        k3 = 0.20
         
         # 3 linear
         # 0- 0.1 : 1-3 taps
@@ -452,17 +456,20 @@ class Adas_base :
             slope = (y_line_segment[0] -minTap)/x_line_segment[0]
             tap = int(slope*ratio + minTap)
             k = k1
+            weight_map[j,i,0:3] = [255,0,0]
         elif ratio <= x_line_segment[1]:
             slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
             tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
             k = k2
+            weight_map[j,i,0:3] = [0,255,0]
         else:
             slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
             tap = int(slope*(ratio-x_line_segment[1]) + minTap)
             k = k3
-              
+            weight_map[j,i,0:3] = [0,0,255]
         
         stddev_img[j,i] = int(stddev) 
+
         return (tap,k)
         
 
@@ -481,7 +488,7 @@ class Adas_base :
              
          return (moving_detection,sad_thres)
     
-    def set_weight(self,sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img):
+    def set_weight(self,sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img,weight_map):
         #Gaussian variance, control the decay rate to reduce the average strength
         #set adaptive sadThres/Variance, only SAD can decide it is moving or not moving region.
         #if it is moving region, don't blending the previous frame for ghost reduction
@@ -490,7 +497,7 @@ class Adas_base :
         moving_detection,sad_thres = self.moving_detection(sad_candidate,candiateNum)
         
         #set activity for current pixel block
-        tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,candiateNum)
+        tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,weight_map,candiateNum)
         
         s = 2.0
         
@@ -523,12 +530,13 @@ class Adas_base :
                  distance_weight[idx] = 0.0
              else:
                  #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                 distance_weight[idx] =np.exp(-np.max(distance_candidate[idx] - s*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))             
+                 distance_weight[idx] =np.exp(-max(distance_candidate[idx] - s*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))            
                  if isPictureBoundary and (idx != 0 and idx!=9):
-                     distance_weight[idx] = 0.0
+                     distance_weight[idx] = 0.0                
                  #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
                  #print j,i,idx,isPictureBoundary,distance_weight[idx],distance_candidate[idx],noiseVariance,tap
         order = np.argsort(distance_weight)             
+        
         
         #set 0 weight based on tap
         total_weight = 0.0       
@@ -616,7 +624,8 @@ class Adas_base :
     """NLM for 3d"""
     def TNR3D_2(self,imgIn,imgOut,imgPrevIn,height,width,frame,noiseVariance,isFirstFrame=0,sad_thres=780):
         imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
-        imgInSpatial = self.spatialFilterFrame(imgIn,2)      
+        imgInSpatial = self.spatialFilterFrame(imgIn,2)  
+        weight_map = np.zeros([height,width,3],np.uint8)
         if isFirstFrame:
              candiateNum = 9
         else:
@@ -649,7 +658,7 @@ class Adas_base :
                          sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
                          distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
                  #print idx,sad_candidate[idx],distance_candidate[idx]
-                 self.set_weight(sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img)                    
+                 self.set_weight(sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img,weight_map)                    
                                                             
                  #calculate the final output based on weight averge filter
                  for c in xrange(3):
@@ -665,7 +674,8 @@ class Adas_base :
            
                      imgOut[j,i,c] =int(pixel_v)                    
         #cv2.imwrite("stddev"+str(frame)+".png",stddev_img)  
-        #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut)           
+        #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut) 
+        cv2.imwrite("weight_map_"+str(frame)+".png",weight_map)
         return imgOut
         
         
@@ -695,7 +705,7 @@ if __name__ == "__main__":
     inputType = "YUV420"
     outputType = "RGB"
     frames = 3
-    noiseVariance = 40
+    noiseVariance = 15
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
