@@ -511,12 +511,13 @@ class Adas_base :
         
         # noise         k          s
         #  5           0.1         0.0
-        #  20          0.8         0.1
+        # 10           0.1         0.2
+        #  20          1.0         0.1
         #  30          1.0         0.1
         #  40          1.0         0.5 
         tap = candiateNum
-        k = 1.2
-        s = 0.1
+        k = 0.1
+        s = 0.2
         
         #set weight based on moving and activity, control the filter length
         """
@@ -727,7 +728,7 @@ if __name__ == "__main__":
     inputType = "YUV420"
     outputType = "RGB"
     frames = 3
-    noiseVariance = 20
+    noiseVariance = 10
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
