@@ -510,14 +510,15 @@ class Adas_base :
         #set k, s
         
         # noise         k          s
-        #  5           0.1         0.0
-        # 10           0.1         0.2
-        #  20          1.0         0.1
+        #   5          0.1         0.0
+        #  10          0.5         0.0
+        #  15          1.0         0.1
         #  30          1.0         0.1
         #  40          1.0         0.5 
         tap = candiateNum
-        k = 0.1
-        s = 0.2
+        sad_thres = 100000
+        k = 0.5
+        s = 0.1
         
         #set weight based on moving and activity, control the filter length
         """
@@ -541,20 +542,13 @@ class Adas_base :
                         
          #set gaussian weight based on Euclidean distance                   
         for idx in xrange(candiateNum):
-             distance_weight[idx] = 0.0
-             if idx == 0:
-                 delta = 0.01
-             elif idx == 9:
-                 delta = 0.005
-             else:
-                 delta = 0.0
-                         
+             distance_weight[idx] = 0.0                        
              #if moving region, remove the moving outlier candidates for ghost reduction
              if sad_candidate[idx] > sad_thres and moving_detection and not isPictureBoundary:
                  distance_weight[idx] = 0.0
              else:
                  #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                 distance_weight[idx] =np.exp(-max(distance_candidate[idx] - s*(noiseVariance**2),delta)/(k*((noiseVariance)**2)))            
+                 distance_weight[idx] =np.exp(-max(distance_candidate[idx] - s*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))            
                  if isPictureBoundary and (idx != 0 and idx!=9):
                      distance_weight[idx] = 0.0                
                  #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
@@ -719,8 +713,8 @@ if __name__ == "__main__":
     
         
     #YUV420->RGB
-    #filename = r"\mobile_qcif.yuv"
-    filename = r"\coastguard_qcif.yuv"
+    filename = r"\mobile_qcif.yuv"
+    #filename = r"\hall_monitor.qcif"
     #filename = r"\coastguard_cif.yuv"    
     inputImage = os.getcwd() + filename
     width = 176#352#176
@@ -728,7 +722,7 @@ if __name__ == "__main__":
     inputType = "YUV420"
     outputType = "RGB"
     frames = 3
-    noiseVariance = 10
+    noiseVariance = 30
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
