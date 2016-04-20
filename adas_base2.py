@@ -420,7 +420,8 @@ class Adas_base :
         #if edge region, need to keep edge, reduce the filter strenght by gaussian variance setting
         for c in xrange(3):
             stddev += np.std(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]  
-            mean  += np.mean(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]
+            #mean  += np.mean(imgInSpatial[j-1:j+1,i-1:i+1,c])*weight_sad[c]
+            mean += np.mean(imgInSpatial[:,:,c])*weight_sad[c]
         if isPictureBoundary:
             stddev = 1.0
             mean = np.mean(imgInSpatial[j,i,0:3])
@@ -430,23 +431,24 @@ class Adas_base :
                         
         ratio = stddev/mean
         
-
     
-        x_line_segment =(0.2,0.8,1.0)
-        y_line_segment =(9,candiateNum,9)
+        x_line_segment =(0.1,0.8,1.0)
+        y_line_segment =(3,candiateNum,3)
         minTap = 1
         if (ratio <= 0):
             ratio = x_line_segment[0]
         
         #set the k1,k2,k3 based on noise variance
         #k1 for low noise level, k2 for medium, k3 for high
-        # noise     k1      k2      k3        x_line            y_line
-        #  5       0.1     0.1     0.1      (0.2,0.8,1.0)    (9,18,4)
-        # 15       0.25    0.35    0.20    
-        # 30       0.15    0.45    0.20     (0.1,0.8,1.0)    (3,18,3)  
+        # noise     k1      k2      k3        x_line            y_line    s
+        #  5       0.1     0.1     0.1      (0.1,0.8,1.0)    (3,18,3)    0.0   
+        # 30       0.15    0.45    0.20     (0.1,0.8,1.0)    (3,18,3)    2.0  
         # >30      0.15    1.0     0.20     (0.1,0.8,1.0)    (3,18,3)
-        k1 = 0.55
-        k2 = 1.0
+        
+        #new
+        #> 30     1.0      0.2     0.55     
+        k1 = 0.15
+        k2 = 0.45
         k3 = 0.20
         
         # 3 linear
@@ -455,20 +457,25 @@ class Adas_base :
         if ratio <= x_line_segment[0]:
             slope = (y_line_segment[0] -minTap)/x_line_segment[0]
             tap = int(slope*ratio + minTap)
+            #tap = y_line_segment[0]
             k = k1
             weight_map[j,i,0:3] = [255,0,0]
         elif ratio <= x_line_segment[1]:
             slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
             tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
+            #tap = y_line_segment[1]
             k = k2
             weight_map[j,i,0:3] = [0,255,0]
         else:
             slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
             tap = int(slope*(ratio-x_line_segment[1]) + minTap)
             k = k3
+            #tap = y_line_segment[2]
             weight_map[j,i,0:3] = [0,0,255]
         
         stddev_img[j,i] = int(stddev) 
+    
+        
 
         return (tap,k)
         
@@ -499,7 +506,17 @@ class Adas_base :
         #set activity for current pixel block
         tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,weight_map,candiateNum)
         
-        s = 2.0
+        #do not use the stddev/mean as the indice, not work in high noise  
+        #set k, s
+        
+        # noise         k          s
+        #  5           0.1         0.0
+        #  20          0.8         0.1
+        #  30          1.0         0.1
+        #  40          1.0         0.5 
+        tap = candiateNum
+        k = 1.2
+        s = 0.1
         
         #set weight based on moving and activity, control the filter length
         """
@@ -524,19 +541,24 @@ class Adas_base :
          #set gaussian weight based on Euclidean distance                   
         for idx in xrange(candiateNum):
              distance_weight[idx] = 0.0
+             if idx == 0:
+                 delta = 0.01
+             elif idx == 9:
+                 delta = 0.005
+             else:
+                 delta = 0.0
                          
              #if moving region, remove the moving outlier candidates for ghost reduction
              if sad_candidate[idx] > sad_thres and moving_detection and not isPictureBoundary:
                  distance_weight[idx] = 0.0
              else:
                  #Gaussian weight based on euclidean distance , distance_avg for normalization               
-                 distance_weight[idx] =np.exp(-max(distance_candidate[idx] - s*(noiseVariance**2),0.0)/(k*((noiseVariance)**2)))            
+                 distance_weight[idx] =np.exp(-max(distance_candidate[idx] - s*(noiseVariance**2),delta)/(k*((noiseVariance)**2)))            
                  if isPictureBoundary and (idx != 0 and idx!=9):
                      distance_weight[idx] = 0.0                
                  #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
                  #print j,i,idx,isPictureBoundary,distance_weight[idx],distance_candidate[idx],noiseVariance,tap
         order = np.argsort(distance_weight)             
-        
         
         #set 0 weight based on tap
         total_weight = 0.0       
@@ -705,7 +727,7 @@ if __name__ == "__main__":
     inputType = "YUV420"
     outputType = "RGB"
     frames = 3
-    noiseVariance = 15
+    noiseVariance = 20
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
