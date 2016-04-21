@@ -432,7 +432,7 @@ class Adas_base :
         ratio = stddev/mean
         
     
-        x_line_segment =(0.1,0.2,1.0)
+        x_line_segment =(0.1,0.3,1.0)
         y_line_segment =(3,candiateNum,3)
         minTap = 1
         if (ratio <= 0):
@@ -440,16 +440,17 @@ class Adas_base :
         
         #set the k1,k2,k3 based on noise variance
         #k1 for low noise level, k2 for medium, k3 for high
-        # noise     k1      k2      k3        x_line            y_line    s
-        #  5       0.1     0.1     0.1      (0.1,0.8,1.0)    (3,18,3)    0.0   
-        # 30       0.15    0.45    0.20     (0.1,0.8,1.0)    (3,18,3)    2.0  
-        # >30      0.15    1.0     0.20     (0.1,0.8,1.0)    (3,18,3)
+        # noise     k1      k2     k3   s1   s2  s3     
+        #20         2.0     1.6    0.1  0.3 0.1  0.1
         
         #new
         #> 30     1.0      0.2     0.55     
-        k1 = 1.0
-        k2 = 0.8
-        k3 = 0.2
+        k1 = 1.8
+        k2 = 1.6
+        k3 = 1.0
+        s1 = 0.2
+        s2 = 0.2
+        s3 = 0.2
         tap = candiateNum
         
         # 3 linear
@@ -460,17 +461,20 @@ class Adas_base :
             #tap = int(slope*ratio + minTap)
             #tap = y_line_segment[0]
             k = k1
+            s = s1
             weight_map[j,i,0:3] = [255,0,0]
         elif ratio <= x_line_segment[1]:
             slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
             #tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
             #tap = y_line_segment[1]
             k = k2
+            s = s2
             weight_map[j,i,0:3] = [0,255,0]
         else:
             slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
             #tap = int(slope*(ratio-x_line_segment[1]) + minTap)
             k = k3
+            s = s3
             #tap = y_line_segment[2]
             weight_map[j,i,0:3] = [0,0,255]
         
@@ -478,7 +482,7 @@ class Adas_base :
     
         
 
-        return (tap,k)
+        return (tap,k,s)
         
 
         
@@ -492,8 +496,7 @@ class Adas_base :
          #moving or occlusion or scene change detecting
          moving_detection = 0
          if sad_candidate[moving_idx] >= sad_thres:
-             moving_detection = 1  
-         sad_thres = 100000    
+             moving_detection = 1     
          return (moving_detection,sad_thres)
     
     def set_weight(self,sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img,weight_map):
@@ -505,7 +508,7 @@ class Adas_base :
         moving_detection,sad_thres = self.moving_detection(sad_candidate,candiateNum)
         
         #set activity for current pixel block
-        tap,k = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,weight_map,candiateNum)
+        tap,k,s = self.tap_calc(j,i,imgInSpatial,weight_sad,stddev_img,isPictureBoundary,weight_map,candiateNum)
         
         #do not use the stddev/mean as the indice, not work in high noise  
         #set k, s
@@ -516,8 +519,8 @@ class Adas_base :
         #  20          0.8         0.1
         #  30          1.0         0.1
         #  >=40        1.0         0.5 
-        k = 0.8
-        s = 0.0
+       # k = 0.8
+        #s = 0.05
         
         #set weight based on moving and activity, control the filter length
         """
@@ -570,7 +573,7 @@ class Adas_base :
         #normalization weight to 0~1
         for idx in xrange(candiateNum):
             distance_weight[idx] /= total_weight                                                   
-            print j,i,idx,distance_weight[idx],distance_candidate[idx],tap,total_weight,k
+            #print j,i,idx,distance_weight[idx],distance_candidate[idx],tap,total_weight,k
                         
 
     
@@ -724,7 +727,7 @@ if __name__ == "__main__":
     height =144#288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 6
+    frames = 4
     noiseVariance = 20
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
