@@ -516,11 +516,11 @@ class Adas_base :
         # noise         k          s
         #   5          0.1         0.0
         #  10          0.5         0.0
-        #  20          0.8         0.1
+        #  20          1.1         0.0
         #  30          1.0         0.1
         #  >=40        1.0         0.5 
-       # k = 0.8
-        #s = 0.05
+        k = 1.3
+        s = 0.0
         
         #set weight based on moving and activity, control the filter length
         """
