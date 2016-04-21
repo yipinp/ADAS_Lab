@@ -432,7 +432,7 @@ class Adas_base :
         ratio = stddev/mean
         
     
-        x_line_segment =(0.1,0.8,1.0)
+        x_line_segment =(0.1,0.2,1.0)
         y_line_segment =(3,candiateNum,3)
         minTap = 1
         if (ratio <= 0):
@@ -447,28 +447,29 @@ class Adas_base :
         
         #new
         #> 30     1.0      0.2     0.55     
-        k1 = 0.15
-        k2 = 0.45
-        k3 = 0.20
+        k1 = 1.0
+        k2 = 0.8
+        k3 = 0.2
+        tap = candiateNum
         
         # 3 linear
         # 0- 0.1 : 1-3 taps
         
         if ratio <= x_line_segment[0]:
             slope = (y_line_segment[0] -minTap)/x_line_segment[0]
-            tap = int(slope*ratio + minTap)
+            #tap = int(slope*ratio + minTap)
             #tap = y_line_segment[0]
             k = k1
             weight_map[j,i,0:3] = [255,0,0]
         elif ratio <= x_line_segment[1]:
             slope = (y_line_segment[1] - y_line_segment[0])/(x_line_segment[1] - x_line_segment[0])
-            tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
+            #tap = int(slope*(ratio-x_line_segment[0]) + y_line_segment[0])
             #tap = y_line_segment[1]
             k = k2
             weight_map[j,i,0:3] = [0,255,0]
         else:
             slope =  (y_line_segment[2] -minTap)/(x_line_segment[2] -x_line_segment[1])          
-            tap = int(slope*(ratio-x_line_segment[1]) + minTap)
+            #tap = int(slope*(ratio-x_line_segment[1]) + minTap)
             k = k3
             #tap = y_line_segment[2]
             weight_map[j,i,0:3] = [0,0,255]
@@ -492,7 +493,7 @@ class Adas_base :
          moving_detection = 0
          if sad_candidate[moving_idx] >= sad_thres:
              moving_detection = 1  
-             
+         sad_thres = 100000    
          return (moving_detection,sad_thres)
     
     def set_weight(self,sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img,weight_map):
@@ -512,13 +513,11 @@ class Adas_base :
         # noise         k          s
         #   5          0.1         0.0
         #  10          0.5         0.0
-        #  15          1.0         0.1
+        #  20          0.8         0.1
         #  30          1.0         0.1
-        #  40          1.0         0.5 
-        tap = candiateNum
-        sad_thres = 100000
-        k = 0.5
-        s = 0.1
+        #  >=40        1.0         0.5 
+        k = 0.8
+        s = 0.0
         
         #set weight based on moving and activity, control the filter length
         """
@@ -553,21 +552,25 @@ class Adas_base :
                      distance_weight[idx] = 0.0                
                  #distance_weight[idx] = np.exp(-1.0*(((distance_candidate[idx]+2.0*(noiseVariance**2))/((10*noiseVariance)**2))))  
                  #print j,i,idx,isPictureBoundary,distance_weight[idx],distance_candidate[idx],noiseVariance,tap
-        order = np.argsort(distance_weight)             
+        #order = np.argsort(distance_weight)             
         
         #set 0 weight based on tap
-        total_weight = 0.0       
+        total_weight = 0.0  
+        weight_thres = distance_weight[0]
         for idx in xrange(candiateNum):
             #print idx,tap,order[idx],distance_weight[order[idx]],total_weight,moving_detection,isPictureBoundary,sad_thres,sad_candidate[idx]
-            if idx < candiateNum-tap:
-                distance_weight[order[idx]] = 0.0  
-        
-            total_weight += distance_weight[order[idx]]     
+            #if idx < candiateNum-tap:
+            #   distance_weight[order[idx]] = 0.0
+            #total_weight += distance_weight[order[idx]] 
+            if distance_weight[idx] < weight_thres*0.03:
+               distance_weight[idx] = 0.0 
+            total_weight += distance_weight[idx]       
+                
                                           
         #normalization weight to 0~1
         for idx in xrange(candiateNum):
             distance_weight[idx] /= total_weight                                                   
-            #print j,i,idx,distance_weight[idx],distance_candidate[idx],tap,total_weight,k
+            print j,i,idx,distance_weight[idx],distance_candidate[idx],tap,total_weight,k
                         
 
     
@@ -721,8 +724,8 @@ if __name__ == "__main__":
     height =144#288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 3
-    noiseVariance = 30
+    frames = 6
+    noiseVariance = 20
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
     """
