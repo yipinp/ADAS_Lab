@@ -83,6 +83,7 @@ class fisheye_base :
         f = self.focal_calc(mode,max_r,fov)  
         grid_spacing = 0.2
         line_width = 0.1
+        edge_width = 0.03
         #macbeth color checker
         mb_r = np.zeros([4,6],np.uint8)
         mb_g = np.zeros([4,6],np.uint8)
@@ -127,12 +128,29 @@ class fisheye_base :
                         grn = 255.0
                         blu = 255.0
                     
+                    #divide all plane as uniform grid network
+                    # line->edge
                     if sx < line_width or sy < line_width:
                         p = 0.0
                     else:
                         p = 1.0
                     
                     
+                    #draw circles for fov checker
+                    theta = np.mod(theta,math.pi/18.0)/(math.pi/18.0)
+                    if theta < edge_width:
+                        phi = 0.5 + 0.5*math.cos(math.pi*theta/edge_width)
+                        red = int((1.0-phi)*red*p + phi*255.0)
+                        grn = int((1.0-phi)*grn*p + phi*16.0)
+                        blu = int((1.0-phi)*blu*p + phi*16.0)
+                        p = 1.0
+                    elif theta > 1.0 - edge_width:
+                        phi = 0.5 + 0.5*math.cos(math.pi*(1.0 -theta)/edge_width)
+                        red = int((1.0-phi)*red*p + phi*255.0)
+                        grn = int((1.0-phi)*grn*p + phi*16.0)
+                        blu = int((1.0-phi)*blu*p + phi*16.0)
+                        p = 1.0
+                                    
                 else:
                     red = 0.0
                     grn = 0.0
@@ -149,5 +167,5 @@ class fisheye_base :
 if __name__ == "__main__":
     
     test =  fisheye_base()
-    test.fisheye_gen(1,176,144,90)
+    test.fisheye_gen(1,176,144,60)
     del(test)
