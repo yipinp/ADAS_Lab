@@ -80,6 +80,7 @@ class fisheye_base :
     def fisheye_gen(self,mode,width,height,fov):
         fisheye_img = np.zeros([height,width,3],np.uint8)
         max_r = self.fisheye_radius(width,height)
+        fov = fov*math.pi/180.0
         f = self.focal_calc(mode,max_r,fov)  
         grid_spacing = 0.2
         line_width = 0.1
@@ -132,34 +133,68 @@ class fisheye_base :
                     # line->edge
                     if sx < line_width or sy < line_width:
                         p = 0.0
+                    elif sx < (line_width + edge_width) or sy <(line_width+edge_width):
+                        sx -= line_width
+                        sx /= edge_width
+                        sy -= line_width
+                        sy /= edge_width
+                        if sx < sy:
+                            sy = np.mod(np.abs(math.cos(phi)*math.tan(theta)),grid_spacing)/grid_spacing
+                            if sy > 1.0 - edge_width and sy -(1.0-edge_width)/edge_width > (1.0 - sx):
+                                sy -= 1.0 - edge_width
+                                sy /= edge_width
+                                p = 0.5 + 0.5*math.cos(math.pi*sy)
+                            else:
+                                p = 0.5 - 0.5 *math.cos(math.pi*sy)
+                        else:
+                            sx = np.mod(np.abs(math.sin(phi)*math.tan(theta)),grid_spacing)/grid_spacing 
+                            if sx > 1.0 - edge_width and sx -(1.0-edge_width)/edge_width > (1.0 - sy):
+                                sx -= 1.0 - edge_width
+                                sx /= edge_width
+                                p = 0.5 + 0.5*math.cos(math.pi*sy)
+                            else:
+                                p = 0.5 - 0.5 *math.cos(math.pi*sy)
                     else:
-                        p = 1.0
-                    
-                    
+                        if sx > 1.0-edge_width or sy > 1.0-edge_width:
+                            sx -= (1.0 - edge_width);
+                            sx /=edge_width
+                            sy -= (1.0 - edge_width);
+                            sy /=edge_width
+                            if sx > sy:
+                               p = 0.5 + 0.5*math.cos(math.pi*sx) 
+                            else:
+                               p = 0.5 + 0.5*math.cos(math.pi*sy)
+                        else:
+                              p = 1.0
+                            
                     #draw circles for fov checker
                     theta = np.mod(theta,math.pi/18.0)/(math.pi/18.0)
+                    #print theta
+    
                     if theta < edge_width:
                         phi = 0.5 + 0.5*math.cos(math.pi*theta/edge_width)
-                        red = int((1.0-phi)*red*p + phi*255.0)
-                        grn = int((1.0-phi)*grn*p + phi*16.0)
-                        blu = int((1.0-phi)*blu*p + phi*16.0)
+                        red = (1.0-phi)*red*p + phi*255.0
+                        grn = (1.0-phi)*grn*p + phi*16.0
+                        blu = (1.0-phi)*blu*p + phi*16.0
                         p = 1.0
                     elif theta > 1.0 - edge_width:
                         phi = 0.5 + 0.5*math.cos(math.pi*(1.0 -theta)/edge_width)
-                        red = int((1.0-phi)*red*p + phi*255.0)
-                        grn = int((1.0-phi)*grn*p + phi*16.0)
-                        blu = int((1.0-phi)*blu*p + phi*16.0)
-                        p = 1.0
-                                    
+                        red = (1.0-phi)*red*p + phi*255.0
+                        grn = (1.0-phi)*grn*p + phi*16.0
+                        blu = (1.0-phi)*blu*p + phi*16.0
+                        p = 1.0                
                 else:
                     red = 0.0
                     grn = 0.0
                     blu = 0.0
+                    p = 0.0
         
-                fisheye_img[y,x,0] = int(red)
-                fisheye_img[y,x,1] = int(grn)
-                fisheye_img[y,x,2] = int(blu)
+                fisheye_img[y,x,0] = int(p*red)
+                fisheye_img[y,x,1] = int(p*grn)
+                fisheye_img[y,x,2] = int(p*blu)
+
         #write output frame
+        fisheye_img = cv2.cvtColor(fisheye_img,cv2.COLOR_BGR2RGB)
         cv2.imwrite('frame.png',fisheye_img)
         
                 
@@ -167,5 +202,5 @@ class fisheye_base :
 if __name__ == "__main__":
     
     test =  fisheye_base()
-    test.fisheye_gen(1,176,144,60)
+    test.fisheye_gen(1,640,480,120)
     del(test)
