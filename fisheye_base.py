@@ -197,7 +197,14 @@ class fisheye_base :
         fisheye_img = cv2.cvtColor(fisheye_img,cv2.COLOR_BGR2RGB)
         cv2.imwrite('frame.png',fisheye_img)
         
-                
+   
+    def fisheye_correction(self,mode,width,height,fov):
+       pass
+
+
+
+
+             
 
 if __name__ == "__main__":
     

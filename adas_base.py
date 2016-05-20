@@ -675,8 +675,8 @@ class Adas_base :
                          imgIn2 = imgInSpatial
                      for c in xrange(3):
                          #set current pixel distance as small value
-                         sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
-                         distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsety,offsetx)*weight_sad[c])
+                         sad_candidate[idx] += (self.SAD_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsetx,offsety)*weight_sad[c])
+                         distance_candidate[idx] += (self.Euc_distance_block(imgInSpatial,imgIn2,i,j,isPictureBoundary,c,offsetx,offsety)*weight_sad[c])
                  #print idx,sad_candidate[idx],distance_candidate[idx]
                  self.set_weight(sad_candidate,distance_candidate,weight_sad,j,i,imgInSpatial,noiseVariance,distance_weight,isPictureBoundary,candiateNum,stddev_img,weight_map)                    
                                                             
@@ -697,6 +697,69 @@ class Adas_base :
         #cv2.imwrite("tnr3d"+str(frame)+".png",imgOut) 
         cv2.imwrite("weight_map_"+str(frame)+".png",weight_map)
         return imgOut
+        
+    
+    """NLM for 3d and support block size and windows size"""
+    def TNR3D_point_process(self,imgIn,imgRef,center_x,center_y,weight_sad,block_size,window_size,temporal,noiseVariance):
+        weight = np.zeros([block_size,block_size],np.float64)
+        distance_candidate = np.zeros([block_size,block_size],np.float64)
+        if temporal:
+            imgIn2 = imgRef
+        else:
+            imgIn2 = imgIn
+            
+        filter_size = block_size - window_size + 1
+        h = 0.4*noiseVariance
+            
+       
+        for j in xrange(filter_size):
+            for i in xrange(filter_size):
+                for c in xrange(3):
+                    y =  j - block_size/2 + window_size/2;
+                    x =  i - block_size/2 + window_size/2;
+                    print j,i,y,x,center_y,center_x
+                    distance_candidate[j,i] = self.Euc_distance_block(imgIn,imgIn2,center_x,center_y,0,c,x,y,window_size)*weight_sad[c]
+                weight[j,i] =np.exp(-(distance_candidate[j,i] + 2*(noiseVariance**2))/(h**2))
+                
+        #average based on the weight for current pixel
+        pixel_v = np.zeros(3,np.float)
+        for c in xrange(3):
+            for j in xrange(filter_size):
+                for i in xrange(filter_size): 
+                    pixel_v[c] += weight[j,i]*imgIn2[j,i,c]
+            
+            pixel_v[c] /= (filter_size*filter_size)
+        return pixel_v
+
+        
+        
+                     
+    
+    def TNR3D_3(self,imgIn,imgOut,imgPrevIn,height,width,frame,noiseVariance,isFirstFrame=0,block_size=21,window_size=7):
+        imgPrevSpatial = self.spatialFilterFrame(imgPrevIn,2)
+        imgInSpatial = self.spatialFilterFrame(imgIn,2)  
+        #R,G,B with equal weight
+        weight_sad = (1/3.0,1/3.0,1/3.0)
+        pixel_v0 = np.zeros(3,np.float)
+        pixel_v1 = np.zeros(3,np.float)
+        pixel_v  = np.zeros(3,np.float)
+                
+        #check NxN for current frame and prev NxN 
+        #SAD for moving region checking
+        for j in xrange(height):
+             for i in xrange(width): 
+                 #21x21
+                 if j >= block_size/2 and i >= block_size/2:
+                     pixel_v0 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,0,noiseVariance)
+                     pixel_v = pixel_v0
+                 if not isFirstFrame:
+                     pixel_v1 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,1,noiseVariance)
+                     pixel_v = (pixel_v0 + pixel_v1)>>1  
+                
+                 imgOut[j,i,:] = pixel_v
+        
+        return imgOut
+        
         
         
     """Quality checking"""
@@ -840,7 +903,8 @@ if __name__ == "__main__":
         #    imgOut = test.spatialFilterFrame(noisy_rgb,0)
         #else:
         #    imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i,noiseVariance) 
-        imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i,noiseVariance,i==0)
+        #imgOut = test.TNR3D_2(noisy_rgb,imgOut,imgPrev,height,width,i,noiseVariance,i==0)
+        imgOut = test.TNR3D_3(noisy_rgb,imgOut,imgPrev,height,width,i,noiseVariance,i==0)
         imgPrev = copy.deepcopy(imgOut)
         videoWR.write(imgOut)
         #cv2.imwrite("tnr_"+str(i)+".png",imgOut)
