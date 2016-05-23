@@ -717,7 +717,7 @@ class Adas_base :
                 for c in xrange(3):
                     y =  j - block_size/2 + window_size/2;
                     x =  i - block_size/2 + window_size/2;
-                    print j,i,y,x,center_y,center_x
+                    #print j,i,y,x,center_y,center_x
                     distance_candidate[j,i] = self.Euc_distance_block(imgIn,imgIn2,center_x,center_y,0,c,x,y,window_size)*weight_sad[c]
                 weight[j,i] =np.exp(-(distance_candidate[j,i] + 2*(noiseVariance**2))/(h**2))
                 
@@ -749,12 +749,13 @@ class Adas_base :
         for j in xrange(height):
              for i in xrange(width): 
                  #21x21
-                 if j >= block_size/2 and i >= block_size/2:
-                     pixel_v0 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,0,noiseVariance)
-                     pixel_v = pixel_v0
-                 if not isFirstFrame:
-                     pixel_v1 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,1,noiseVariance)
-                     pixel_v = (pixel_v0 + pixel_v1)>>1  
+                 if j >= block_size/2 and j < height - block_size/2 and i >= block_size/2 and i < width-block_size/2:
+                     if isFirstFrame:
+                         pixel_v0 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,0,noiseVariance)
+                         pixel_v = pixel_v0
+                     else :
+                         pixel_v1 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,1,noiseVariance)
+                     pixel_v = (pixel_v0 + pixel_v1)/2 
                 
                  imgOut[j,i,:] = pixel_v
         
