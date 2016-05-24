@@ -711,7 +711,7 @@ class Adas_base :
         filter_size = block_size - window_size + 1
         h = 0.4*noiseVariance
             
-       
+        norm = 0.0 
         for j in xrange(filter_size):
             for i in xrange(filter_size):
                 for c in xrange(3):
@@ -719,16 +719,22 @@ class Adas_base :
                     x =  i - block_size/2 + window_size/2;
                     #print j,i,y,x,center_y,center_x
                     distance_candidate[j,i] = self.Euc_distance_block(imgIn,imgIn2,center_x,center_y,0,c,x,y,window_size)*weight_sad[c]
-                weight[j,i] =np.exp(-(distance_candidate[j,i] + 2*(noiseVariance**2))/(h**2))
+                weight[j,i] =np.exp(-max(distance_candidate[j,i]-2*(noiseVariance**2),0.0)/(h**2))
+                norm += weight[j,i]
                 
+        #normalization
+        for j in xrange(filter_size):  
+             for i in xrange(filter_size):                   
+                  weight[j,i] /= norm
+                  #print j,i,distance_candidate[j,i],weight[j,i],norm
         #average based on the weight for current pixel
         pixel_v = np.zeros(3,np.float)
         for c in xrange(3):
             for j in xrange(filter_size):
                 for i in xrange(filter_size): 
                     pixel_v[c] += weight[j,i]*imgIn2[j,i,c]
-            
-            pixel_v[c] /= (filter_size*filter_size)
+      
+           
         return pixel_v
 
         
@@ -756,7 +762,7 @@ class Adas_base :
                      else :
                          pixel_v1 = self.TNR3D_point_process(imgInSpatial,imgPrevSpatial,i,j,weight_sad,block_size,window_size,1,noiseVariance)
                      pixel_v = (pixel_v0 + pixel_v1)/2 
-                
+                 #print pixel_v
                  imgOut[j,i,:] = pixel_v
         
         return imgOut
@@ -788,7 +794,7 @@ if __name__ == "__main__":
     height =144#288#144
     inputType = "YUV420"
     outputType = "RGB"
-    frames = 10
+    frames = 2
     noiseVariance = 20
     ST = 1
     test = Adas_base(inputImage,width,height,inputType,outputType)
